@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HADomotics – Configuration</title>
+  <link rel="stylesheet" href="static/css/style.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+</head>
+<body>
+  <header class="app-header">
+    <span class="material-icons header-icon">floor_plan</span>
+    <h1>HADomotics</h1>
+    <span class="header-subtitle">Interactive Floor Plan</span>
+  </header>
+
+  <main class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <section class="sidebar-section">
+        <div class="section-header">
+          <h2>Floors</h2>
+          <button class="icon-btn" id="btnAddFloor" title="Add floor">
+            <span class="material-icons">add</span>
+          </button>
+        </div>
+        <ul class="floor-list" id="floorList"></ul>
+      </section>
+
+      <section class="sidebar-section element-section" id="elementSection" style="display:none">
+        <div class="section-header">
+          <h2>Elements</h2>
+          <button class="icon-btn" id="btnAddElement" title="Add element">
+            <span class="material-icons">add</span>
+          </button>
+        </div>
+        <p class="hint">Click on the floor plan to place a new element.</p>
+        <ul class="element-list" id="elementList"></ul>
+      </section>
+    </aside>
+
+    <!-- Editor -->
+    <div class="editor-area">
+      <div class="editor-toolbar" id="editorToolbar" style="display:none">
+        <label class="toolbar-label">
+          <span class="material-icons">upload_file</span> Upload Floor Plan
+          <input type="file" id="imageUpload" accept="image/*" style="display:none" />
+        </label>
+        <button class="toolbar-btn" id="btnDeleteImage" title="Remove image">
+          <span class="material-icons">delete</span> Remove Image
+        </button>
+        <span class="spacer"></span>
+        <span class="toolbar-hint" id="toolbarHint">Click on the image to place an element</span>
+      </div>
+
+      <div class="canvas-wrapper" id="canvasWrapper">
+        <div class="empty-state" id="emptyState">
+          <span class="material-icons empty-icon">house</span>
+          <p>Select or create a floor to get started</p>
+        </div>
+        <div class="floor-canvas" id="floorCanvas" style="display:none">
+          <div class="image-placeholder" id="imagePlaceholder" style="display:none">
+            <span class="material-icons">add_photo_alternate</span>
+            <p>No floor plan image yet</p>
+            <button class="btn btn-primary" id="btnUploadFromPlaceholder">Upload Image</button>
+          </div>
+          <div class="canvas-container" id="canvasContainer" style="display:none; position:relative;">
+            <img id="floorImage" alt="Floor Plan" style="max-width:100%; display:block;" />
+            <!-- Elements are rendered as absolutely-positioned divs here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Properties panel -->
+    <aside class="properties-panel" id="propertiesPanel" style="display:none">
+      <div class="panel-header">
+        <h2 id="propPanelTitle">Element</h2>
+        <button class="icon-btn" id="btnCloseProps">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <form id="elementForm" class="element-form" autocomplete="off">
+        <input type="hidden" id="propElementId" />
+        <div class="form-group">
+          <label for="propLabel">Label</label>
+          <input type="text" id="propLabel" placeholder="Living Room Light" />
+        </div>
+        <div class="form-group">
+          <label for="propType">Type</label>
+          <select id="propType">
+            <option value="button">Button / Switch</option>
+            <option value="light">Light</option>
+            <option value="sensor">Sensor</option>
+            <option value="indicator">Indicator</option>
+            <option value="climate">Climate</option>
+            <option value="cover">Cover / Blind</option>
+            <option value="camera">Camera</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="propEntityId">Entity ID</label>
+          <input type="text" id="propEntityId" placeholder="light.living_room" />
+        </div>
+        <div class="form-group">
+          <label for="propIcon">Icon (MDI name)</label>
+          <input type="text" id="propIcon" placeholder="lightbulb" />
+        </div>
+        <div class="form-group form-group-row">
+          <div>
+            <label for="propColorOn">Color On</label>
+            <input type="color" id="propColorOn" value="#4CAF50" />
+          </div>
+          <div>
+            <label for="propColorOff">Color Off</label>
+            <input type="color" id="propColorOff" value="#9E9E9E" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="propTapAction">Tap Action</label>
+          <select id="propTapAction">
+            <option value="toggle">Toggle</option>
+            <option value="more-info">More Info</option>
+            <option value="navigate">Navigate</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+        <div class="form-group form-group-row">
+          <div>
+            <label for="propWidth">Width (px)</label>
+            <input type="number" id="propWidth" min="20" max="400" value="60" />
+          </div>
+          <div>
+            <label for="propHeight">Height (px)</label>
+            <input type="number" id="propHeight" min="20" max="400" value="30" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">
+            <span class="material-icons">save</span> Save
+          </button>
+          <button type="button" class="btn btn-danger" id="btnDeleteElement">
+            <span class="material-icons">delete</span> Delete
+          </button>
+        </div>
+      </form>
+    </aside>
+  </main>
+
+  <!-- Add Floor Dialog -->
+  <div class="modal-overlay" id="addFloorModal" style="display:none">
+    <div class="modal">
+      <h2>Add Floor</h2>
+      <div class="form-group">
+        <label for="newFloorName">Floor Name</label>
+        <input type="text" id="newFloorName" placeholder="e.g. Basement" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="btnConfirmAddFloor">Add</button>
+        <button class="btn" id="btnCancelAddFloor">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="static/js/app.js"></script>
+</body>
+</html>
