@@ -1,0 +1,26 @@
+{
+  "name": "HADomotics",
+  "description": "Interactive home floor plan for Home Assistant - manage buttons, lights, sensors and more with a visual domotics interface.",
+  "version": "1.0.1",
+  "slug": "hadomotics",
+  "init": false,
+  "arch": ["amd64", "armv7", "aarch64", "armhf"],
+  "homeassistant_api": true,
+  "ingress": true,
+  "ingress_port": 8099,
+  "panel_icon": "mdi:floor-plan",
+  "panel_title": "HADomotics",
+  "ports": {
+    "8099/tcp": 8099
+  },
+  "ports_description": {
+    "8099/tcp": "HADomotics web interface"
+  },
+  "map": ["config:rw", "share:rw"],
+  "options": {
+    "log_level": "info"
+  },
+  "schema": {
+    "log_level": "list(trace|debug|info|notice|warning|error|fatal)?"
+  }
+}
