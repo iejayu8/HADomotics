@@ -4,7 +4,13 @@
 
 "use strict";
 
-const API = "";   // relative URLs – works with ingress
+// Derive the base path from the current page URL so that API calls work both
+// when the addon is accessed directly (port 8099, pathname = "/") and when it
+// is served through Home Assistant ingress (pathname = "/api/hassio_ingress/TOKEN/").
+// Examples:
+//   "/"                          → ""
+//   "/api/hassio_ingress/TOKEN/" → "/api/hassio_ingress/TOKEN"
+const API = window.location.pathname.replace(/\/+$/, "");
 
 // ---------------------------------------------------------------------------
 // State
@@ -161,7 +167,7 @@ function renderFloorCanvas(floor) {
   } else {
     hide(ep);
     show(cc, "inline-block");
-    img.src = `/api/images/${floor.image}?t=${Date.now()}`;
+    img.src = `${API}/api/images/${floor.image}?t=${Date.now()}`;
     img.onload = () => renderElements(floor.elements || []);
   }
 }
@@ -283,7 +289,7 @@ async function uploadImage(file) {
   const formData = new FormData();
   formData.append("image", file);
   try {
-    const res = await fetch(`/api/floors/${currentFloor.id}/image`, {
+    const res = await fetch(`${API}/api/floors/${currentFloor.id}/image`, {
       method: "POST",
       body: formData,
     });
