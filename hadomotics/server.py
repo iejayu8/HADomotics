@@ -1,5 +1,6 @@
 """HADomotics - Home Assistant Domotics Addon Backend."""
 
+import copy
 import json
 import logging
 import os
@@ -83,7 +84,7 @@ def load_config() -> dict:
                 return json.load(f)
         except (json.JSONDecodeError, OSError) as exc:
             log.warning("Could not read config file: %s – resetting to defaults", exc)
-    return {"floors": DEFAULT_FLOORS}
+    return {"floors": copy.deepcopy(DEFAULT_FLOORS)}
 
 
 def save_config(config: dict) -> None:
