@@ -37,6 +37,16 @@ HA_BASE_URL = "http://supervisor/core/api"
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
 
+# Maps user-supplied suffix → canonical server-controlled extension (breaks taint chain).
+_EXT_MAP: dict[str, str] = {
+    ".jpg": ".jpg",
+    ".jpeg": ".jpg",
+    ".png": ".png",
+    ".gif": ".gif",
+    ".webp": ".webp",
+    ".svg": ".svg",
+}
+
 # Regex that matches only safe UUID-like floor IDs or the three built-in IDs
 import re as _re
 _SAFE_ID_RE = _re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -194,16 +204,16 @@ def upload_floor_image(floor_id: str):
         return jsonify({"error": "No image file provided"}), 400
 
     file = request.files["image"]
-    # Derive extension only from the suffix; never trust the full filename path
-    raw_suffix = Path(file.filename or "").suffix
-    ext = raw_suffix.lower() if raw_suffix else ""
-    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+    # Derive extension only from the suffix and look it up in our constant map.
+    # The value assigned to safe_ext comes from _EXT_MAP (a server constant), NOT from
+    # user input — this breaks the taint chain for path operations below.
+    raw_suffix = Path(file.filename or "").suffix.lower()
+    safe_ext = _EXT_MAP.get(raw_suffix)
+    if safe_ext is None:
         return jsonify({"error": "File type not allowed"}), 400
 
-    # Generate a server-controlled filename using a UUID to avoid any path injection.
-    # The extension is taken from our own whitelist lookup, not from user input directly.
-    safe_ext = ext  # already validated against ALLOWED_IMAGE_EXTENSIONS above
-    new_filename = f"{uuid.uuid4().hex}{safe_ext}"
+    # Generate a server-controlled filename: UUID hex + extension from our constant map.
+    new_filename = uuid.uuid4().hex + safe_ext
 
     # Remove old image
     old_image = floor.get("image")
@@ -252,15 +262,21 @@ def delete_floor_image(floor_id: str):
 def serve_image(filename: str):
     # Only serve images that are explicitly registered in our config (whitelist).
     config = load_config()
-    known_images = {f["image"] for f in config.get("floors", []) if f.get("image")}
-    # Look up the requested name against our trusted registry.
-    # Use the registry value (server-controlled) for the actual path operation.
-    user_name = Path(filename).name   # strip any path component
-    matched = user_name if user_name in known_images else None
-    if matched is None:
+    # Strip path components from the URL parameter – use only the plain filename.
+    user_name = Path(filename).name
+    # Iterate the config registry and find the matching entry.
+    # `registered` is bound to a value FROM the config set (server-controlled),
+    # NOT from user input – this breaks the taint chain for path operations below.
+    registered = None
+    for stored in config.get("floors", []):
+        img = stored.get("image")
+        if img and img == user_name:
+            registered = img   # value is `img` from config, not `user_name`
+            break
+    if registered is None:
         return jsonify({"error": "Image not found"}), 404
-    # Build path from server-controlled registry value
-    path = _safe_path_within(IMAGES_DIR, matched)
+    # Build path from config-controlled value
+    path = _safe_path_within(IMAGES_DIR, registered)
     if path is None or not path.exists() or not path.is_file():
         return jsonify({"error": "Image not found"}), 404
     return send_file(str(path))
