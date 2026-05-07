@@ -512,7 +512,43 @@ body {
   justify-content: flex-end;
 }
 
-/* ── Toast ── */
+/* ── View / Interact mode ── */
+
+/* Canvas cursor becomes a default pointer instead of crosshair in view mode */
+.canvas-container.view-mode {
+  cursor: default;
+}
+
+/* Element overlays become clickable buttons in view mode */
+.element-overlay.view-mode {
+  cursor: pointer;
+}
+
+.element-overlay.view-mode:hover {
+  transform: scale(1.04);
+  box-shadow: 0 4px 12px rgba(0,0,0,.35);
+}
+
+.element-overlay.view-mode:active {
+  transform: scale(0.97);
+}
+
+/* Resize handle is hidden in view mode */
+.element-overlay.view-mode .resize-handle {
+  display: none;
+}
+
+/* Active state for the mode-toggle button (when view mode is on) */
+.toolbar-mode-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.toolbar-mode-btn.active:hover {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
 .toast-container {
   position: fixed;
   bottom: 24px;
