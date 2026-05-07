@@ -265,8 +265,9 @@ async function fetchEntityStates() {
     entityStates = {};
     states.forEach((s) => { entityStates[s.entity_id] = s; });
     updateElementStates();
-  } catch (_) {
-    // Silently ignore – HA may not be available
+  } catch (err) {
+    // HA may not be reachable (no supervisor token in dev, network error, etc.)
+    console.debug("HADomotics: could not fetch HA states", err);
   }
 }
 
@@ -374,10 +375,8 @@ function setViewMode(enabled) {
     btn.title = "Switch to View Mode";
     // Restore edit-only toolbar controls
     document.querySelectorAll(".edit-only").forEach((el) => {
-      // Restore appropriate display value per element type
-      if (el.tagName === "LABEL") {
-        show(el, "inline-flex");
-      } else if (el.tagName === "BUTTON") {
+      // Label and Button both need inline-flex; other elements (spans) use inline
+      if (el.tagName === "LABEL" || el.tagName === "BUTTON") {
         show(el, "inline-flex");
       } else {
         show(el, "inline");

@@ -524,13 +524,15 @@ body {
   cursor: pointer;
 }
 
-.element-overlay.view-mode:hover {
-  transform: scale(1.04);
-  box-shadow: 0 4px 12px rgba(0,0,0,.35);
-}
+@media (prefers-reduced-motion: no-preference) {
+  .element-overlay.view-mode:hover {
+    transform: scale(1.04);
+    box-shadow: 0 4px 12px rgba(0,0,0,.35);
+  }
 
-.element-overlay.view-mode:active {
-  transform: scale(0.97);
+  .element-overlay.view-mode:active {
+    transform: scale(0.97);
+  }
 }
 
 /* Resize handle is hidden in view mode */
