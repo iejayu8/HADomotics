@@ -205,6 +205,55 @@ const STYLES = `
     color: var(--primary-text-color);
     outline: none;
   }
+
+  /* Edit mode button */
+  .edit-btn {
+    padding: 4px 12px;
+    border-radius: 16px;
+    border: 1px solid var(--primary-color, #1976d2);
+    background: transparent;
+    color: var(--primary-color, #1976d2);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+
+  .edit-btn:hover {
+    background: var(--primary-color, #1976d2);
+    color: var(--text-primary-color, #fff);
+  }
+
+  .exit-edit-btn {
+    padding: 4px 12px;
+    border-radius: 16px;
+    border: 1px solid var(--error-color, #d32f2f);
+    background: var(--error-color, #d32f2f);
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+
+  .exit-edit-btn:hover {
+    opacity: 0.85;
+  }
+
+  /* Element overlay in edit mode */
+  .element-btn.edit-mode {
+    border: 2px dashed rgba(255,255,255,0.85);
+    cursor: default;
+    pointer-events: none;
+    opacity: 0.75;
+  }
+
+  .canvas-wrapper.edit-mode {
+    outline: 2px dashed var(--error-color, #d32f2f);
+    outline-offset: -2px;
+  }
 `;
 
 /* ============================================================
@@ -220,6 +269,7 @@ class HADomoticsCard extends HTMLElement {
     this._currentFloor = null;
     this._statePollingInterval = null;
     this._attached = false;
+    this._editMode = false;
 
     this.attachShadow({ mode: "open" });
     this._render();
@@ -265,17 +315,49 @@ class HADomoticsCard extends HTMLElement {
 
   _render() {
     const shadow = this.shadowRoot;
+    const editBtn = this._editMode
+      ? `<button class="exit-edit-btn" id="editModeBtn">Exit Edit Mode</button>`
+      : `<button class="edit-btn" id="editModeBtn">Edit</button>`;
     shadow.innerHTML = `
       <style>${STYLES}</style>
       <ha-card>
         <div class="card-header">
           <div class="card-title">${this._escHtml(this._config.title || "HADomotics")}</div>
+          ${editBtn}
         </div>
         <div class="floor-tabs" id="floorTabs"></div>
         <div class="canvas-wrapper" id="canvasWrapper">
           <div class="loading-spinner">Loading floor plan…</div>
         </div>
       </ha-card>`;
+
+    shadow.getElementById("editModeBtn").addEventListener("click", () => this._toggleEditMode());
+  }
+
+  _toggleEditMode() {
+    this._editMode = !this._editMode;
+    // Re-render header button
+    const editBtn = this.shadowRoot.getElementById("editModeBtn");
+    if (editBtn) {
+      if (this._editMode) {
+        editBtn.className = "exit-edit-btn";
+        editBtn.textContent = "Exit Edit Mode";
+      } else {
+        editBtn.className = "edit-btn";
+        editBtn.textContent = "Edit";
+      }
+    }
+    // Update canvas wrapper outline
+    const wrapper = this.shadowRoot.getElementById("canvasWrapper");
+    if (wrapper) {
+      if (this._editMode) {
+        wrapper.classList.add("edit-mode");
+      } else {
+        wrapper.classList.remove("edit-mode");
+      }
+    }
+    // Re-render elements to apply/remove edit mode styling
+    this._renderElements();
   }
 
   _renderFloors() {
@@ -308,7 +390,10 @@ class HADomoticsCard extends HTMLElement {
       <img class="floor-image" id="floorImg" src="${imgSrc}" alt="${this._escHtml(this._currentFloor.name)}" />`;
 
     const img = wrapper.querySelector("#floorImg");
-    img.addEventListener("load", () => this._renderElements());
+    img.addEventListener("load", () => {
+      this._renderElements();
+      if (this._editMode) wrapper.classList.add("edit-mode");
+    });
     img.addEventListener("error", () => {
       wrapper.innerHTML = `<div class="error-msg">Could not load floor plan image.</div>`;
     });
@@ -350,7 +435,11 @@ class HADomoticsCard extends HTMLElement {
 
       btn.setAttribute("title", this._elementTooltip(el, stateInfo));
 
-      btn.addEventListener("click", () => this._handleTap(el, btn));
+      if (!this._editMode) {
+        btn.addEventListener("click", () => this._handleTap(el, btn));
+      } else {
+        btn.classList.add("edit-mode");
+      }
 
       wrapper.appendChild(btn);
     });
