@@ -690,7 +690,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HADomotics Card %c v1.0.2 ",
+  "%c HADomotics Card %c v1.0.3 ",
   "background:#1976D2;color:#fff;font-weight:bold;padding:2px 4px;border-radius:3px 0 0 3px",
   "background:#42A5F5;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0"
 );
