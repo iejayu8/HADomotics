@@ -1,6 +1,6 @@
 name: HADomotics
 description: Interactive home floor plan for Home Assistant - manage buttons, lights, sensors and more with a visual domotics interface.
-version: "1.0.1"
+version: "1.0.2"
 slug: hadomotics
 init: false
 arch:

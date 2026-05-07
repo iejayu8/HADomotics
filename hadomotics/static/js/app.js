@@ -21,6 +21,9 @@ let currentElement = null;
 let pendingPlacement = false;   // true while waiting for canvas click to place
 let dragState = null;           // {elemId, startX, startY, origX, origY}
 let resizeState = null;         // {elemId, startX, startY, origW, origH}
+let viewMode = false;           // false = edit mode (default), true = view/interact mode
+let entityStates = {};          // cache of HA entity states keyed by entity_id
+let statePollingTimer = null;   // setInterval handle for state refresh in view mode
 
 // ---------------------------------------------------------------------------
 // Utility helpers
@@ -177,59 +180,221 @@ function renderElements(elements) {
   // Remove existing overlays
   cc.querySelectorAll(".element-overlay").forEach((e) => e.remove());
 
+  // Reflect the current mode on the canvas container cursor
+  cc.classList.toggle("view-mode", viewMode);
+
   elements.forEach((el) => {
     const div = document.createElement("div");
-    div.className = "element-overlay";
+    div.className = "element-overlay" + (viewMode ? " view-mode" : "");
     div.dataset.id = el.id;
     div.style.left = `${el.x}px`;
     div.style.top = `${el.y}px`;
     div.style.width = `${el.width}px`;
     div.style.height = `${el.height}px`;
-    div.style.background = el.color_off || "#9E9E9E";
+    div.style.background = _getElementBackground(el);
 
-    if (currentElement && currentElement.id === el.id) {
+    if (!viewMode && currentElement && currentElement.id === el.id) {
       div.classList.add("selected");
     }
 
     div.innerHTML = `
       <span class="material-icons el-icon">${typeIcon(el.type)}</span>
       <span class="el-label">${escapeHtml(el.label || "")}</span>
-      <div class="resize-handle"></div>`;
+      ${!viewMode ? '<div class="resize-handle"></div>' : ''}`;
 
-    // Drag to reposition
-    div.addEventListener("mousedown", (e) => {
-      if (e.target.classList.contains("resize-handle")) return;
-      e.preventDefault();
-      dragState = {
-        elemId: el.id,
-        startX: e.clientX,
-        startY: e.clientY,
-        origX: el.x,
-        origY: el.y,
-      };
-      openElementProps(el);
-    });
+    if (!viewMode) {
+      // Edit mode: drag to reposition
+      div.addEventListener("mousedown", (e) => {
+        if (e.target.classList.contains("resize-handle")) return;
+        e.preventDefault();
+        dragState = {
+          elemId: el.id,
+          startX: e.clientX,
+          startY: e.clientY,
+          origX: el.x,
+          origY: el.y,
+        };
+        openElementProps(el);
+      });
 
-    // Resize handle
-    div.querySelector(".resize-handle").addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      resizeState = {
-        elemId: el.id,
-        startX: e.clientX,
-        startY: e.clientY,
-        origW: el.width,
-        origH: el.height,
-      };
-    });
+      // Resize handle
+      div.querySelector(".resize-handle").addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resizeState = {
+          elemId: el.id,
+          startX: e.clientX,
+          startY: e.clientY,
+          origW: el.width,
+          origH: el.height,
+        };
+      });
+    } else {
+      // View mode: click triggers the configured HA action
+      div.addEventListener("click", () => handleElementTap(el, div));
+    }
 
     cc.appendChild(div);
   });
 }
 
 // ---------------------------------------------------------------------------
-// Floor selection
+// View / Interact mode helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Returns the background colour for an element overlay.
+ * In view mode the actual HA entity state drives the colour; in edit mode the
+ * "off" colour is always used so the configuration intent stays clear.
+ */
+function _getElementBackground(el) {
+  if (el.entity_id && entityStates[el.entity_id]) {
+    const state = entityStates[el.entity_id].state;
+    const isOn = ["on", "open", "home", "active", "heating", "cooling", "true"].includes(
+      state.toLowerCase()
+    );
+    return isOn ? (el.color_on || "#4CAF50") : (el.color_off || "#9E9E9E");
+  }
+  return el.color_off || "#9E9E9E";
+}
+
+/** Fetch all HA entity states and cache them. */
+async function fetchEntityStates() {
+  try {
+    const states = await apiFetch("/api/ha/states");
+    entityStates = {};
+    states.forEach((s) => { entityStates[s.entity_id] = s; });
+    updateElementStates();
+  } catch (err) {
+    // HA may not be reachable (no supervisor token in dev, network error, etc.)
+    console.debug("HADomotics: could not fetch HA states", err);
+  }
+}
+
+/** Repaint element overlay colours based on the latest cached entity states. */
+function updateElementStates() {
+  if (!currentFloor || !$("canvasContainer")) return;
+  (currentFloor.elements || []).forEach((el) => {
+    const overlay = $("canvasContainer").querySelector(`[data-id="${el.id}"]`);
+    if (overlay) overlay.style.background = _getElementBackground(el);
+  });
+}
+
+/** Begin polling HA entity states every 5 seconds. */
+function startStatePolling() {
+  fetchEntityStates();
+  statePollingTimer = setInterval(fetchEntityStates, 5000);
+}
+
+/** Stop polling and clear the state cache. */
+function stopStatePolling() {
+  if (statePollingTimer) {
+    clearInterval(statePollingTimer);
+    statePollingTimer = null;
+  }
+  entityStates = {};
+}
+
+/**
+ * Handle a tap/click on an element in view mode.
+ * Executes the element's configured tap_action via the HA proxy.
+ */
+async function handleElementTap(el, overlayEl) {
+  const action = el.tap_action || "toggle";
+
+  if (action === "none") return;
+
+  if (!el.entity_id) {
+    toast("No entity configured for this element", "warn");
+    return;
+  }
+
+  if (action === "more-info") {
+    const stateObj = entityStates[el.entity_id];
+    const stateStr = stateObj ? stateObj.state : "unknown";
+    const friendly = (stateObj && stateObj.attributes && stateObj.attributes.friendly_name)
+      || el.label || el.entity_id;
+    toast(`${friendly}: ${stateStr}`, "info", 4000);
+    return;
+  }
+
+  if (action === "navigate") {
+    toast(`Navigate: ${el.navigate_path || "(no path configured)"}`, "info", 3000);
+    return;
+  }
+
+  // Default: toggle
+  overlayEl.style.opacity = "0.5";
+  overlayEl.style.pointerEvents = "none";
+  try {
+    const [domain] = el.entity_id.split(".");
+    await apiFetch(`/api/ha/services/${domain}/toggle`, {
+      method: "POST",
+      body: JSON.stringify({ entity_id: el.entity_id }),
+    });
+    await fetchEntityStates();
+  } catch (err) {
+    toast(`Action failed: ${err.message}`, "error");
+  } finally {
+    overlayEl.style.opacity = "";
+    overlayEl.style.pointerEvents = "";
+  }
+}
+
+/**
+ * Switch between Edit Mode (viewMode=false) and View/Interact Mode (viewMode=true).
+ * Updates the toolbar UI, toggles edit-only controls, and re-renders elements.
+ */
+function setViewMode(enabled) {
+  viewMode = enabled;
+  const btn = $("btnToggleMode");
+
+  if (enabled) {
+    // Cancel any pending placement
+    if (pendingPlacement) {
+      pendingPlacement = false;
+      if ($("canvasContainer")) $("canvasContainer").style.cursor = "";
+    }
+    // Close properties panel
+    hide("propertiesPanel");
+    currentElement = null;
+    // Update toggle button appearance
+    btn.innerHTML = '<span class="material-icons">edit</span> Edit Mode';
+    btn.classList.add("active");
+    btn.title = "Switch to Edit Mode";
+    // Hide edit-only toolbar controls
+    document.querySelectorAll(".edit-only").forEach((el) => hide(el));
+    // Disable "Add element" while in view mode
+    $("btnAddElement").disabled = true;
+    // Start polling HA states
+    startStatePolling();
+  } else {
+    // Update toggle button appearance
+    btn.innerHTML = '<span class="material-icons">visibility</span> View Mode';
+    btn.classList.remove("active");
+    btn.title = "Switch to View Mode";
+    // Restore edit-only toolbar controls
+    document.querySelectorAll(".edit-only").forEach((el) => {
+      // Label and Button both need inline-flex; other elements (spans) use inline
+      if (el.tagName === "LABEL" || el.tagName === "BUTTON") {
+        show(el, "inline-flex");
+      } else {
+        show(el, "inline");
+      }
+    });
+    // Re-enable "Add element"
+    $("btnAddElement").disabled = false;
+    // Stop polling
+    stopStatePolling();
+  }
+
+  // Re-render elements to apply mode-specific behaviour (drag vs click)
+  if (currentFloor && currentFloor.image) {
+    renderElements(currentFloor.elements || []);
+  }
+}
+
+
 
 async function selectFloor(floorId) {
   try {
@@ -580,14 +745,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     startPlacement();
   });
 
-  // Canvas click → place element
+  // Canvas click → place element (edit mode only)
   $("canvasContainer").addEventListener("click", (e) => {
+    if (viewMode) return;
     if (!pendingPlacement) return;
     const rect = $("canvasContainer").getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     placeElementAt(x, y);
   });
+
+  // Mode toggle button
+  $("btnToggleMode").addEventListener("click", () => setViewMode(!viewMode));
 
   // Properties form
   $("elementForm").addEventListener("submit", saveElementProps);

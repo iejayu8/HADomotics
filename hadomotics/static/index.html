@@ -42,15 +42,18 @@
     <!-- Editor -->
     <div class="editor-area">
       <div class="editor-toolbar" id="editorToolbar" style="display:none">
-        <label class="toolbar-label">
+        <label class="toolbar-label edit-only" id="uploadImageLabel">
           <span class="material-icons">upload_file</span> Upload Floor Plan
           <input type="file" id="imageUpload" accept="image/*" style="display:none" />
         </label>
-        <button class="toolbar-btn" id="btnDeleteImage" title="Remove image">
+        <button class="toolbar-btn edit-only" id="btnDeleteImage" title="Remove image">
           <span class="material-icons">delete</span> Remove Image
         </button>
         <span class="spacer"></span>
-        <span class="toolbar-hint" id="toolbarHint">Click on the image to place an element</span>
+        <span class="toolbar-hint edit-only" id="toolbarHint">Click on the image to place an element</span>
+        <button class="toolbar-btn toolbar-mode-btn" id="btnToggleMode" title="Switch to View Mode">
+          <span class="material-icons">visibility</span> View Mode
+        </button>
       </div>
 
       <div class="canvas-wrapper" id="canvasWrapper">
