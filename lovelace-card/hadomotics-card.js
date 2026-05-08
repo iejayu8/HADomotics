@@ -51,9 +51,32 @@ const STYLES = `
   .floor-tabs {
     display: flex;
     gap: 4px;
-    padding: 4px 16px 8px;
+    padding: 4px 16px 10px;
     overflow-x: auto;
+    overflow-y: hidden;
+    scroll-behavior: smooth;
     scrollbar-width: thin;
+    scrollbar-color: rgba(0,0,0,0.45) rgba(0,0,0,0.08);
+  }
+
+  .floor-tabs::-webkit-scrollbar {
+    height: 10px;
+  }
+
+  .floor-tabs::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.08);
+    border-radius: 999px;
+  }
+
+  .floor-tabs::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.45);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  .floor-tabs::-webkit-scrollbar-thumb:hover {
+    background: rgba(0,0,0,0.6);
   }
 
   .floor-tab {

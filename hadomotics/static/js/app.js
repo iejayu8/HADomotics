@@ -21,7 +21,7 @@ let currentElement = null;
 let pendingPlacement = false;   // true while waiting for canvas click to place
 let dragState = null;           // {elemId, startX, startY, origX, origY}
 let resizeState = null;         // {elemId, startX, startY, origW, origH}
-let viewMode = false;           // false = edit mode (default), true = view/interact mode
+let viewMode = true;            // true = view/interact mode (default), false = edit mode
 let entityStates = {};          // cache of HA entity states keyed by entity_id
 let statePollingTimer = null;   // setInterval handle for state refresh in view mode
 
@@ -675,6 +675,7 @@ async function loadFloors() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   await loadFloors();
+  setViewMode(true);
 
   // Add floor button
   $("btnAddFloor").addEventListener("click", () => {
