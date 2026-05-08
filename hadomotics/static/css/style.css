@@ -243,7 +243,7 @@ body {
   overflow: auto;
   display: flex;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 24px;
 }
 
@@ -258,7 +258,11 @@ body {
 
 .empty-icon { font-size: 64px; opacity: .4; }
 
-.floor-canvas { width: 100%; }
+.floor-canvas {
+  width: auto;
+  display: inline-block;
+  flex-shrink: 0;
+}
 
 .image-placeholder {
   display: flex;
@@ -276,16 +280,25 @@ body {
 
 .canvas-container {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
+  height: auto;
   cursor: crosshair;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: var(--shadow);
   background: #fff;
+  flex-shrink: 0;
 }
 
-.canvas-container img { display: block; max-width: 100%; }
+.canvas-container img {
+  display: block;
+  max-width: 90vw;
+  max-height: 90vh;
+  height: auto;
+  width: auto;
+}
 
 /* ── Element overlays ── */
 .element-overlay {
