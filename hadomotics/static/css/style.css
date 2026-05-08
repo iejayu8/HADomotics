@@ -583,3 +583,17 @@ body {
   from { transform: translateX(40px); opacity: 0; }
   to   { transform: translateX(0);    opacity: 1; }
 }
+
+.floor-tabs {
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  scrollbar-width: auto; /* For Firefox */
+}
+.floor-tabs::-webkit-scrollbar {
+  height: 8px;
+  background: #eee;
+}
+.floor-tabs::-webkit-scrollbar-thumb {
+  background: #bbb;
+  border-radius: 4px;
+}
