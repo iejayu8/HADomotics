@@ -177,33 +177,38 @@ function renderFloorCanvas(floor) {
 
 function renderElements(elements) {
   const cc = $("canvasContainer");
-  // Remove existing overlays
   cc.querySelectorAll(".element-overlay").forEach((e) => e.remove());
 
-  // Reflect the current mode on the canvas container cursor
   cc.classList.toggle("view-mode", viewMode);
 
   elements.forEach((el) => {
     const div = document.createElement("div");
     div.className = "element-overlay" + (viewMode ? " view-mode" : "");
     div.dataset.id = el.id;
+
+    const rotation = parseFloat(el.rotation) || 0;
+
     div.style.left = `${el.x}px`;
     div.style.top = `${el.y}px`;
     div.style.width = `${el.width}px`;
     div.style.height = `${el.height}px`;
     div.style.background = _getElementBackground(el);
+    div.style.transform = `rotate(${rotation}deg)`;
+    div.style.transformOrigin = "center center";
+    div.style.position = "absolute";
 
     if (!viewMode && currentElement && currentElement.id === el.id) {
       div.classList.add("selected");
     }
 
+    // ← CAMBIO IMPORTANTE: Ya NO contra-rotamos el texto ni el icono
     div.innerHTML = `
       <span class="material-icons el-icon">${typeIcon(el.type)}</span>
       <span class="el-label">${escapeHtml(el.label || "")}</span>
-      ${!viewMode ? '<div class="resize-handle"></div>' : ''}`;
+      ${!viewMode ? '<div class="resize-handle"></div>' : ''}
+    `;
 
     if (!viewMode) {
-      // Edit mode: drag to reposition
       div.addEventListener("mousedown", (e) => {
         if (e.target.classList.contains("resize-handle")) return;
         e.preventDefault();
@@ -217,20 +222,21 @@ function renderElements(elements) {
         openElementProps(el);
       });
 
-      // Resize handle
-      div.querySelector(".resize-handle").addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        resizeState = {
-          elemId: el.id,
-          startX: e.clientX,
-          startY: e.clientY,
-          origW: el.width,
-          origH: el.height,
-        };
-      });
+      const resizeHandle = div.querySelector(".resize-handle");
+      if (resizeHandle) {
+        resizeHandle.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          resizeState = {
+            elemId: el.id,
+            startX: e.clientX,
+            startY: e.clientY,
+            origW: el.width,
+            origH: el.height,
+          };
+        });
+      }
     } else {
-      // View mode: click triggers the configured HA action
       div.addEventListener("click", () => handleElementTap(el, div));
     }
 
@@ -509,17 +515,6 @@ async function placeElementAt(x, y) {
 
 function openElementProps(el) {
   currentElement = el;
-
-  // Highlight in overlay
-  document.querySelectorAll(".element-overlay").forEach((d) => {
-    d.classList.toggle("selected", d.dataset.id === el.id);
-  });
-  // Highlight in element list
-  document.querySelectorAll("#elementList li").forEach((li) => {
-    li.classList.toggle("active", li.dataset.id === el.id);
-  });
-
-  $("propPanelTitle").textContent = el.label || "Element";
   $("propElementId").value = el.id;
   $("propLabel").value = el.label || "";
   $("propType").value = el.type || "button";
@@ -530,14 +525,14 @@ function openElementProps(el) {
   $("propTapAction").value = el.tap_action || "toggle";
   $("propWidth").value = el.width || 60;
   $("propHeight").value = el.height || 30;
+  $("propRotation").value = el.rotation || 0;   // ← AÑADIDO
 
-  show("propertiesPanel", "flex");
-  $("propertiesPanel").style.flexDirection = "column";
+  show("propertiesPanel");
 }
 
-async function saveElementProps(e) {
+function saveElementProps(e) {
   e.preventDefault();
-  if (!currentFloor || !currentElement) return;
+  if (!currentElement || !currentFloor) return;
 
   const data = {
     label: $("propLabel").value.trim(),
@@ -547,26 +542,21 @@ async function saveElementProps(e) {
     color_on: $("propColorOn").value,
     color_off: $("propColorOff").value,
     tap_action: $("propTapAction").value,
-    width: parseFloat($("propWidth").value) || 60,
-    height: parseFloat($("propHeight").value) || 30,
+    width: parseInt($("propWidth").value) || 60,
+    height: parseInt($("propHeight").value) || 30,
+    rotation: parseFloat($("propRotation").value) || 0,
   };
 
-  try {
-    const updated = await apiFetch(
-      `/api/floors/${currentFloor.id}/elements/${currentElement.id}`,
-      { method: "PUT", body: JSON.stringify(data) }
-    );
-    // Update local state
-    const idx = currentFloor.elements.findIndex((x) => x.id === updated.id);
-    if (idx !== -1) currentFloor.elements[idx] = updated;
-    currentElement = updated;
-    renderElements(currentFloor.elements);
-    renderElementList(currentFloor.elements);
-    $("propPanelTitle").textContent = updated.label || "Element";
-    toast("Saved", "success");
-  } catch (err) {
-    toast(`Error saving: ${err.message}`, "error");
-  }
+  apiFetch(`/api/floors/${currentFloor.id}/elements/${currentElement.id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  })
+    .then(() => {
+      toast("Element saved", "success");
+      // Forzar recarga completa del floor
+      selectFloor(currentFloor.id);
+    })
+    .catch((err) => toast(`Error saving: ${err.message}`, "error"));
 }
 
 async function deleteElement(elemId) {

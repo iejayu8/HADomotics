@@ -337,8 +337,11 @@ def update_element(floor_id: str, element_id: str):
         return jsonify({"error": "Element not found"}), 404
 
     data = request.get_json(force=True)
+    
+    # Lista actualizada con 'rotation'
     updatable = ["type", "label", "entity_id", "icon", "x", "y", "width", "height",
-                 "color_on", "color_off", "tap_action"]
+                 "color_on", "color_off", "tap_action", "rotation"]   # ← AÑADIDO
+
     for key in updatable:
         if key in data:
             elem[key] = data[key]

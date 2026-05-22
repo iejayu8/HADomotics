@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0
+
+- Add Element rotation in "edit mode"
+
 ## 1.0.2
 
 - Add View/Interact mode to the configuration panel floor plan editor

@@ -68,7 +68,6 @@
           </div>
           <div class="canvas-container" id="canvasContainer" style="display:none; position:relative;">
             <img id="floorImage" alt="Floor Plan" style="display:block;" />
-            <!-- Elements are rendered as absolutely-positioned divs here -->
           </div>
         </div>
       </div>
@@ -84,10 +83,19 @@
       </div>
       <form id="elementForm" class="element-form" autocomplete="off">
         <input type="hidden" id="propElementId" />
+
         <div class="form-group">
           <label for="propLabel">Label</label>
           <input type="text" id="propLabel" placeholder="Living Room Light" />
         </div>
+
+        <!-- Rotación -->
+        <div class="form-group">
+          <label for="propRotation">Rotación (°)</label>
+          <input type="number" id="propRotation" min="-180" max="180" step="5" value="0" />
+          <small>-180 a 180 grados</small>
+        </div>
+
         <div class="form-group">
           <label for="propType">Type</label>
           <select id="propType">
@@ -101,14 +109,17 @@
             <option value="custom">Custom</option>
           </select>
         </div>
+
         <div class="form-group">
           <label for="propEntityId">Entity ID</label>
           <input type="text" id="propEntityId" placeholder="light.living_room" />
         </div>
+
         <div class="form-group">
           <label for="propIcon">Icon (MDI name)</label>
           <input type="text" id="propIcon" placeholder="lightbulb" />
         </div>
+
         <div class="form-group form-group-row">
           <div>
             <label for="propColorOn">Color On</label>
@@ -119,6 +130,7 @@
             <input type="color" id="propColorOff" value="#9E9E9E" />
           </div>
         </div>
+
         <div class="form-group">
           <label for="propTapAction">Tap Action</label>
           <select id="propTapAction">
@@ -128,6 +140,7 @@
             <option value="none">None</option>
           </select>
         </div>
+
         <div class="form-group form-group-row">
           <div>
             <label for="propWidth">Width (px)</label>
@@ -138,6 +151,7 @@
             <input type="number" id="propHeight" min="20" max="400" value="30" />
           </div>
         </div>
+
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">
             <span class="material-icons">save</span> Save
