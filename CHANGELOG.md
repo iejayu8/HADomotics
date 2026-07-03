@@ -1,11 +1,11 @@
 # Changelog
-## 1.1.5
+## 1.2.1
 - error solving
 ## 1.1.3
 
 - **Critical fix**: Replaced direct `with-contenv` CMD with a proper `run.sh` startup script (standard HA Python addon pattern). This resolves the broken UI (buttons not working, no View/Edit mode toggle, new floor button doing nothing) that appeared in 1.1.2 for some users.
 - The supervisor token fix (element control in View mode) remains in place and is more reliable now.
-- If you experienced data loss: The floors are stored in the addon's persistent `/data/config.json`. Check if you had the backup option enabled during previous updates, or look for previous versions in the addon's backup location.
+- If you experienced data loss: The floors are stored in the addon's persistent `/data/config.yaml`. Check if you had the backup option enabled during previous updates, or look for previous versions in the addon's backup location.
 
 ## 1.1.2
 

@@ -45,7 +45,7 @@ def tmp_data(tmp_path):
 
     srv.DATA_DIR = tmp_path
     srv.IMAGES_DIR = tmp_path / "images"
-    srv.CONFIG_FILE = tmp_path / "config.json"
+    srv.CONFIG_FILE = tmp_path / "config.yaml"
     srv.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
     yield tmp_path

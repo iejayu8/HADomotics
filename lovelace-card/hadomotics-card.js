@@ -540,7 +540,38 @@ class HADomoticsCard extends HTMLElement {
       this.dispatchEvent(evt);
       return;
     }
+    if (action === "service") {
+    btnEl.classList.add("loading");
 
+    try {
+        const [domain, service] = el.service.split(".");
+
+        console.log(
+            "HADomotics -> Calling service:",
+            domain,
+            service,
+            {
+                entity_id: el.entity_id,
+                ...(el.service_data || {})
+            }
+        );
+
+        await this._hass.callService(
+            domain,
+            service,
+            {
+                entity_id: el.entity_id,
+                ...(el.service_data || {})
+            }
+        );
+
+    } catch (err) {
+        console.error("HADomotics Service Error", err);
+    } finally {
+        btnEl.classList.remove("loading");
+    }
+    return;
+    }
     // Default: toggle
     btnEl.classList.add("loading");
     try {
