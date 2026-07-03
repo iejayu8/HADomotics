@@ -25,7 +25,7 @@ log = logging.getLogger("hadomotics")
 def _resolve_paths() -> tuple:
     data = Path(os.environ.get("DATA_DIR", "/data"))
     images = data / "images"
-    config = data / "config.json"
+    config = data / "config.yaml"
     data.mkdir(parents=True, exist_ok=True)
     images.mkdir(parents=True, exist_ok=True)
     return data, images, config
