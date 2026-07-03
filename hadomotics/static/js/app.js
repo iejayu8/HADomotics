@@ -54,10 +54,10 @@ function toast(msg, type = "info", duration = 3000) {
 
 function escapeHtml(str) {
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/"/g, """);
 }
 
 async function apiFetch(path, options = {}) {
@@ -304,6 +304,7 @@ function stopStatePolling() {
 /**
  * Handle a tap/click on an element in view mode.
  * Executes the element's configured tap_action via the HA proxy.
+ * Improved error handling for token issues.
  */
 async function handleElementTap(el, overlayEl) {
   const action = el.tap_action || "toggle";
@@ -339,8 +340,16 @@ async function handleElementTap(el, overlayEl) {
       body: JSON.stringify({ entity_id: el.entity_id }),
     });
     await fetchEntityStates();
+    toast("Action executed successfully", "success", 1500);
   } catch (err) {
-    toast(`Action failed: ${err.message}`, "error");
+    console.error("HADomotics action failed:", err);
+    let msg = err.message;
+    if (msg.includes("supervisor token") || msg.includes("token")) {
+      msg = "Supervisor token not available. Check addon configuration (homeassistant_api: true).";
+    } else if (msg.includes("Unknown")) {
+      msg = "Entity not found or unavailable in Home Assistant.";
+    }
+    toast(`Action failed: ${msg}`, "error");
   } finally {
     overlayEl.style.opacity = "";
     overlayEl.style.pointerEvents = "";
