@@ -1,18 +1,19 @@
 # Changelog
 
+## 1.1.3
+
+- **Critical fix**: Replaced direct `with-contenv` CMD with a proper `run.sh` startup script (standard HA Python addon pattern). This resolves the broken UI (buttons not working, no View/Edit mode toggle, new floor button doing nothing) that appeared in 1.1.2 for some users.
+- The supervisor token fix (element control in View mode) remains in place and is more reliable now.
+- If you experienced data loss: The floors are stored in the addon's persistent `/data/config.json`. Check if you had the backup option enabled during previous updates, or look for previous versions in the addon's backup location.
+
 ## 1.1.2
 
-- **Important for update detection**: Bumped version to 1.1.2 to force Home Assistant Add-on Store to recognize the new release after the 1.1.1 changes.
-- If you still see version 1.1.0 / 1.1.1 after this update, please **remove and re-add** the custom repository in HA:
-  1. Settings → Add-ons → Add-on Store → ⋮ menu on the HADomotics repo → Remove
-  2. Re-add the repository: `https://github.com/iejayu8/HADomotics`
-  3. Then click "Check for updates"
-- This release also includes the critical `with-contenv` fix from 1.1.1 (SUPERVISOR_TOKEN now properly available → element clicks in View mode and live state polling now work correctly).
+- Bumped version to force Home Assistant Add-on Store detection.
+- Included improved startup (later refined in 1.1.3).
 
 ## 1.1.1
 
-- **Bugfix**: Use `/usr/bin/with-contenv` wrapper in Dockerfile so `SUPERVISOR_TOKEN` is properly available inside the addon container. This fixes "Action failed: no supervisor token" errors when clicking element buttons in View/Interact mode of the configuration panel (and ensures live state polling works).
-- No regressions to existing features (floor management, image upload, element CRUD, Lovelace card, drag/resize/rotation, ingress support, etc. all preserved).
+- **Bugfix**: Use `/usr/bin/with-contenv` wrapper in Dockerfile so `SUPERVISOR_TOKEN` is properly available inside the addon container. This fixes "Action failed: no supervisor token" errors when clicking element buttons in View/Interact mode.
 
 ## 1.1.0
 
