@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- **Bugfix**: Use `/usr/bin/with-contenv` wrapper in Dockerfile so `SUPERVISOR_TOKEN` is properly available inside the addon container. This fixes "Action failed: no supervisor token" errors when clicking element buttons in View/Interact mode of the configuration panel (and ensures live state polling works).
+- No regressions to existing features (floor management, image upload, element CRUD, Lovelace card, drag/resize/rotation, ingress support, etc. all preserved).
+
 ## 1.1.0
 
 - Add Element rotation in "edit mode"
