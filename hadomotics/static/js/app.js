@@ -418,7 +418,7 @@ function setViewMode(enabled) {
 }
 
 // ---------------------------------------------------------------------------
-// Other existing functions (selectFloor, deleteFloor, uploadImage, etc.)
+// Other existing functions
 // ---------------------------------------------------------------------------
 
 async function selectFloor(floorId) {
