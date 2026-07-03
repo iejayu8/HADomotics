@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.3
+## 1.2.4
 
 - **New Feature**: Full support for calling **any Home Assistant service** from elements in the configuration panel.
   - New `tap_action` option: `call-service` (allows `light.turn_on`, `scene.turn_on`, `cover.set_cover_position`, `media_player.volume_set`, etc.).
