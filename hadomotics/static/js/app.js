@@ -48,10 +48,10 @@ function toast(msg, type = "info", duration = 3000) {
 
 function escapeHtml(str) {
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/"/g, """);
 }
 
 async function apiFetch(path, options = {}) {
@@ -67,7 +67,7 @@ async function apiFetch(path, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Dynamic form fields for actions
+// Dynamic form fields + Element properties (defined early)
 // ---------------------------------------------------------------------------
 
 function updateActionFields() {
@@ -79,6 +79,60 @@ function updateActionFields() {
   if (posGroup) posGroup.style.display = (action === "set_position") ? "block" : "none";
   if (svcGroup) svcGroup.style.display = (action === "call-service") ? "block" : "none";
   if (dataGroup) dataGroup.style.display = (action === "call-service") ? "block" : "none";
+}
+
+function openElementProps(el) {
+  currentElement = el;
+  $("propElementId").value = el.id;
+  $("propLabel").value = el.label || "";
+  $("propType").value = el.type || "button";
+  $("propEntityId").value = el.entity_id || "";
+  $("propIcon").value = el.icon || "";
+  $("propColorOn").value = el.color_on || "#4CAF50";
+  $("propColorOff").value = el.color_off || "#9E9E9E";
+  $("propTapAction").value = el.tap_action || "toggle";
+  $("propWidth").value = el.width || 60;
+  $("propHeight").value = el.height || 30;
+  $("propRotation").value = el.rotation || 0;
+
+  if ($("propPosition")) $("propPosition").value = el.position || 50;
+  if ($("propService")) $("propService").value = el.service || "";
+  if ($("propServiceData")) $("propServiceData").value = el.service_data || "";
+
+  show("propertiesPanel");
+  updateActionFields();
+  $("propTapAction").onchange = updateActionFields;
+}
+
+function saveElementProps(e) {
+  e.preventDefault();
+  if (!currentElement || !currentFloor) return;
+
+  const data = {
+    label: $("propLabel").value.trim(),
+    type: $("propType").value,
+    entity_id: $("propEntityId").value.trim(),
+    icon: $("propIcon").value.trim(),
+    color_on: $("propColorOn").value,
+    color_off: $("propColorOff").value,
+    tap_action: $("propTapAction").value,
+    width: parseInt($("propWidth").value) || 60,
+    height: parseInt($("propHeight").value) || 30,
+    rotation: parseFloat($("propRotation").value) || 0,
+    position: parseInt($("propPosition")?.value) || 50,
+    service: $("propService")?.value?.trim() || "",
+    service_data: $("propServiceData")?.value?.trim() || "",
+  };
+
+  apiFetch(`/api/floors/${currentFloor.id}/elements/${currentElement.id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  })
+    .then(() => {
+      toast("Element saved", "success");
+      selectFloor(currentFloor.id);
+    })
+    .catch((err) => toast(`Error saving: ${err.message}`, "error"));
 }
 
 // ---------------------------------------------------------------------------
@@ -300,7 +354,7 @@ function stopStatePolling() {
 }
 
 // ---------------------------------------------------------------------------
-// Handle tap in View Mode (supports set_position + any service)
+// Handle tap in View Mode
 // ---------------------------------------------------------------------------
 async function handleElementTap(el, overlayEl) {
   const action = el.tap_action || "toggle";
@@ -358,7 +412,6 @@ async function handleElementTap(el, overlayEl) {
       });
     } 
     else {
-      // Default: toggle
       const [domain] = el.entity_id.split(".");
       await apiFetch(`/api/ha/services/${domain}/toggle`, {
         method: "POST",
@@ -378,8 +431,9 @@ async function handleElementTap(el, overlayEl) {
 }
 
 // ---------------------------------------------------------------------------
-// Switch between Edit / View Mode
+// Mode switching + other functions
 // ---------------------------------------------------------------------------
+
 function setViewMode(enabled) {
   viewMode = enabled;
   const btn = $("btnToggleMode");
@@ -416,10 +470,6 @@ function setViewMode(enabled) {
     renderElements(currentFloor.elements || []);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Other existing functions
-// ---------------------------------------------------------------------------
 
 async function selectFloor(floorId) {
   try {
@@ -529,7 +579,7 @@ async function deleteElement(elemId) {
 }
 
 // ---------------------------------------------------------------------------
-// Drag / resize handlers
+// Drag / resize
 // ---------------------------------------------------------------------------
 
 document.addEventListener("mousemove", async (e) => {
