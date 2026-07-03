@@ -151,7 +151,7 @@ The addon exposes a simple REST API for integration and scripting:
 
 `amd64` · `aarch64` · `armv7` · `armhf`
 
-**Version 1.1.0** - Fixed token handling in config panel view mode and synchronized versions.
+**Version 1.2.5** - Fixed token handling in config panel view mode and synchronized versions.
 
 ---
 
