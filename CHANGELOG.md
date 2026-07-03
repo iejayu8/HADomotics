@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.2
+
+- **Important for update detection**: Bumped version to 1.1.2 to force Home Assistant Add-on Store to recognize the new release after the 1.1.1 changes.
+- If you still see version 1.1.0 / 1.1.1 after this update, please **remove and re-add** the custom repository in HA:
+  1. Settings → Add-ons → Add-on Store → ⋮ menu on the HADomotics repo → Remove
+  2. Re-add the repository: `https://github.com/iejayu8/HADomotics`
+  3. Then click "Check for updates"
+- This release also includes the critical `with-contenv` fix from 1.1.1 (SUPERVISOR_TOKEN now properly available → element clicks in View mode and live state polling now work correctly).
+
 ## 1.1.1
 
 - **Bugfix**: Use `/usr/bin/with-contenv` wrapper in Dockerfile so `SUPERVISOR_TOKEN` is properly available inside the addon container. This fixes "Action failed: no supervisor token" errors when clicking element buttons in View/Interact mode of the configuration panel (and ensures live state polling works).
