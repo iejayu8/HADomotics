@@ -137,8 +137,16 @@
             <option value="toggle">Toggle</option>
             <option value="more-info">More Info</option>
             <option value="navigate">Navigate</option>
+            <option value="set_position">Set Position (cover)</option>
             <option value="none">None</option>
           </select>
+        </div>
+
+        <!-- Position input for set_position action -->
+        <div class="form-group" id="positionGroup" style="display: none;">
+          <label for="propPosition">Position (0-100)</label>
+          <input type="number" id="propPosition" min="0" max="100" step="1" value="50" />
+          <small>Porcentaje de apertura de la persiana</small>
         </div>
 
         <div class="form-group form-group-row">
