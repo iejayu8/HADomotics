@@ -10,13 +10,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY server.py .
 COPY static/ static/
+COPY run.sh /run.sh
+RUN chmod a+x /run.sh
 
 # Create data directory
 RUN mkdir -p /data/images
 
 EXPOSE 8099
 
-# Use with-contenv wrapper so that SUPERVISOR_TOKEN and other
-# Home Assistant addon environment variables are properly populated.
-# This fixes service calls and state polling in the configuration panel.
-CMD ["/usr/bin/with-contenv", "python", "-u", "server.py"]
+# Use the standard HA addon startup script.
+# This ensures SUPERVISOR_TOKEN and other env vars are properly set via with-contenv + bashio.
+CMD [ "/run.sh" ]
