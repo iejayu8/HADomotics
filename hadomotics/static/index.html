@@ -89,7 +89,6 @@
           <input type="text" id="propLabel" placeholder="Living Room Light" />
         </div>
 
-        <!-- Rotación -->
         <div class="form-group">
           <label for="propRotation">Rotación (°)</label>
           <input type="number" id="propRotation" min="-180" max="180" step="5" value="0" />
@@ -138,15 +137,29 @@
             <option value="more-info">More Info</option>
             <option value="navigate">Navigate</option>
             <option value="set_position">Set Position (cover)</option>
+            <option value="call-service">Llamar servicio personalizado</option>
             <option value="none">None</option>
           </select>
         </div>
 
-        <!-- Position input for set_position action -->
+        <!-- Position for set_position -->
         <div class="form-group" id="positionGroup" style="display: none;">
           <label for="propPosition">Position (0-100)</label>
           <input type="number" id="propPosition" min="0" max="100" step="1" value="50" />
           <small>Porcentaje de apertura de la persiana</small>
+        </div>
+
+        <!-- General service fields -->
+        <div class="form-group" id="serviceGroup" style="display: none;">
+          <label for="propService">Service (domain.service)</label>
+          <input type="text" id="propService" placeholder="cover.set_cover_position" />
+          <small>Ej: cover.set_cover_position, light.turn_on, scene.turn_on</small>
+        </div>
+
+        <div class="form-group" id="serviceDataGroup" style="display: none;">
+          <label for="propServiceData">Service Data (JSON)</label>
+          <textarea id="propServiceData" rows="3" placeholder='{"position": 75}'></textarea>
+          <small>entity_id se añade automáticamente.</small>
         </div>
 
         <div class="form-group form-group-row">
