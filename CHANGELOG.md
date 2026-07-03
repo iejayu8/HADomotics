@@ -1,5 +1,6 @@
 # Changelog
-
+## 1.1.5
+- error solving
 ## 1.1.3
 
 - **Critical fix**: Replaced direct `with-contenv` CMD with a proper `run.sh` startup script (standard HA Python addon pattern). This resolves the broken UI (buttons not working, no View/Edit mode toggle, new floor button doing nothing) that appeared in 1.1.2 for some users.
