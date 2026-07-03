@@ -1,20 +1,17 @@
 # Changelog
 
-## 1.2.4
+## 1.2.6
 
-- **New Feature**: Full support for calling **any Home Assistant service** from elements in the configuration panel.
-  - New `tap_action` option: `call-service` (allows `light.turn_on`, `scene.turn_on`, `cover.set_cover_position`, `media_player.volume_set`, etc.).
-  - New configurable fields: **Service** + **Service Data (JSON)**.
-  - `set_position` action for covers is now fully functional.
-- Backend already supported any service via generic proxy; frontend now fully utilizes it.
-- Dynamic form fields in element properties.
-- Better error handling and success toasts.
+- Fixed critical JavaScript errors: `openElementProps is not defined` and `saveElementProps is not defined`.
+- Moved property panel functions (`openElementProps`, `saveElementProps`, `updateActionFields`) to the top of the file.
+- Fixed `escapeHtml` quoting that was breaking the entire script.
+- Clean, complete `app.js` with all original functionality preserved.
+
+## 1.2.5
+- User manual fixes.
+
+## 1.2.4
+- Service call feature implementation.
 
 ## 1.2.1
-- Improved startup with proper `run.sh` + `with-contenv` (fixed broken UI from previous versions).
-
-## 1.1.x
-- Initial partial `set_position` support + supervisor token fixes.
-
-## 1.0.x
-- Core floor plan, elements, and toggle functionality.
+- Startup improvements with run.sh.
