@@ -16,4 +16,7 @@ RUN mkdir -p /data/images
 
 EXPOSE 8099
 
-CMD ["python", "server.py"]
+# Use with-contenv wrapper so that SUPERVISOR_TOKEN and other
+# Home Assistant addon environment variables are properly populated.
+# This fixes service calls and state polling in the configuration panel.
+CMD ["/usr/bin/with-contenv", "python", "-u", "server.py"]
