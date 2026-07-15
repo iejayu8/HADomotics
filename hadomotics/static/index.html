@@ -137,8 +137,7 @@
             <option value="more-info">More Info</option>
             <option value="navigate">Navigate</option>
             <option value="set_position">Set Position (cover)</option>
-            <option value="open">Open Cover</option>
-            <option value="close">Close Cover</option>
+            <option value="quick-position">Quick Position Selector</option>
             <option value="call-service">Llamar servicio personalizado</option>
             <option value="none">None</option>
           </select>
@@ -179,6 +178,9 @@
           <button type="submit" class="btn btn-primary">
             <span class="material-icons">save</span> Save
           </button>
+          <button type="button" class="btn btn-secondary" id="btnDuplicateElement">
+            <span class="material-icons">content_copy</span> Duplicate
+          </button>
           <button type="button" class="btn btn-danger" id="btnDeleteElement">
             <span class="material-icons">delete</span> Delete
           </button>
@@ -186,6 +188,19 @@
       </form>
     </aside>
   </main>
+
+  <!-- Quick Position Modal -->
+  <div class="modal-overlay" id="quickPositionModal" style="display:none">
+    <div class="modal">
+      <h2 id="quickPositionTitle">Select Position</h2>
+      <div class="quick-position-grid" id="quickPositionGrid">
+        <!-- Populated by JS -->
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="btnCancelQuickPosition">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Add Floor Dialog -->
   <div class="modal-overlay" id="addFloorModal" style="display:none">
