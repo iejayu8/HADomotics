@@ -1,9 +1,10 @@
 # Changelog
 
-## 1.6.0
+## 1.7.0
 
-- Major version bump (1.6.0) for improved Home Assistant addon update detection.
-- Full implementation of Quick Position Selector modal (0/25/50/75/100%).
-- Functional Duplicate button in properties panel.
-- Removed old open/close actions.
-- Clean escapeHtml and complete app.js.
+- Added Export / Import configuration feature (floors, elements and floor plan images).
+- Major version bump for better update detection.
+
+## 1.6.0
+- Quick Position Selector modal and Duplicate button.
+- escapeHtml permanently fixed.
