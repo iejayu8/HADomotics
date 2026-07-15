@@ -1,14 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+- Bumped version to force update detection after repeated escapeHtml issues.
+- Full clean app.js with correct escapeHtml function.
+- Added quick open/close actions for covers.
+
+## 1.2.9
+- Fixed escapeHtml function.
+
 ## 1.2.8
-
-- Added quick actions `Open Cover` and `Close Cover` for easy full open/close of covers from Lovelace buttons and config panel.
-- Improved `more-info` support for dynamic position selection via native HA dialog.
-- Fixed syntax issues and function definitions in `app.js`.
-
-## 1.2.7
-- User manual fixes for service call feature.
-
-## 1.2.6
-- Fixed `openElementProps` and `saveElementProps` not defined.
-- Corrected `escapeHtml` function.
+- Added quick actions Open Cover / Close Cover.
