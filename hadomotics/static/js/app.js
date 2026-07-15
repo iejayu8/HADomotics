@@ -48,10 +48,10 @@ function toast(msg, type = "info", duration = 3000) {
 
 function escapeHtml(str) {
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/"/g, """);
 }
 
 async function apiFetch(path, options = {}) {
@@ -354,6 +354,42 @@ function stopStatePolling() {
 }
 
 // ---------------------------------------------------------------------------
+// Quick Position Modal helpers
+// ---------------------------------------------------------------------------
+function showQuickPositionModal(el) {
+  const modal = $("quickPositionModal");
+  const grid = $("quickPositionGrid");
+  const title = $("quickPositionTitle");
+
+  title.textContent = `Select position for ${el.label || el.entity_id}`;
+  grid.innerHTML = "";
+
+  const positions = [0, 25, 50, 75, 100];
+
+  positions.forEach((pos) => {
+    const btn = document.createElement("button");
+    btn.className = "btn btn-secondary quick-pos-btn";
+    btn.textContent = `${pos}%`;
+    btn.onclick = async () => {
+      hide(modal);
+      try {
+        await apiFetch(`/api/ha/services/cover/set_cover_position`, {
+          method: "POST",
+          body: JSON.stringify({ entity_id: el.entity_id, position: pos }),
+        });
+        await fetchEntityStates();
+        toast(`Cover set to ${pos}%`, "success");
+      } catch (err) {
+        toast(`Failed to set position: ${err.message}`, "error");
+      }
+    };
+    grid.appendChild(btn);
+  });
+
+  show(modal, "flex");
+}
+
+// ---------------------------------------------------------------------------
 // Handle tap in View Mode
 // ---------------------------------------------------------------------------
 async function handleElementTap(el, overlayEl) {
@@ -361,7 +397,7 @@ async function handleElementTap(el, overlayEl) {
 
   if (action === "none") return;
 
-  if (!el.entity_id && !["call-service", "open", "close"].includes(action)) {
+  if (!el.entity_id && action !== "call-service") {
     toast("No entity configured for this element", "warn");
     return;
   }
@@ -390,17 +426,11 @@ async function handleElementTap(el, overlayEl) {
         body: JSON.stringify({ entity_id: el.entity_id, position }),
       });
     } 
-    else if (action === "open") {
-      await apiFetch(`/api/ha/services/cover/open_cover`, {
-        method: "POST",
-        body: JSON.stringify({ entity_id: el.entity_id }),
-      });
-    } 
-    else if (action === "close") {
-      await apiFetch(`/api/ha/services/cover/close_cover`, {
-        method: "POST",
-        body: JSON.stringify({ entity_id: el.entity_id }),
-      });
+    else if (action === "quick-position") {
+      showQuickPositionModal(el);
+      overlayEl.style.opacity = "";
+      overlayEl.style.pointerEvents = "";
+      return;
     } 
     else if (action === "call-service") {
       if (!el.service) {
@@ -437,8 +467,10 @@ async function handleElementTap(el, overlayEl) {
     console.error("HADomotics action failed:", err);
     toast(`Action failed: ${err.message}`, "error");
   } finally {
-    overlayEl.style.opacity = "";
-    overlayEl.style.pointerEvents = "";
+    if (action !== "quick-position") {
+      overlayEl.style.opacity = "";
+      overlayEl.style.pointerEvents = "";
+    }
   }
 }
 
@@ -680,6 +712,34 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadFloors();
   setViewMode(true);
 
+  // Duplicate button
+  const duplicateBtn = $("btnDuplicateElement");
+  if (duplicateBtn) {
+    duplicateBtn.addEventListener("click", async () => {
+      if (!currentElement || !currentFloor) return;
+
+      try {
+        const copy = { ...currentElement };
+        delete copy.id;
+        copy.label = (currentElement.label || "") + " (copy)";
+
+        const newEl = await apiFetch(`/api/floors/${currentFloor.id}/elements`, {
+          method: "POST",
+          body: JSON.stringify(copy),
+        });
+
+        currentFloor.elements = currentFloor.elements || [];
+        currentFloor.elements.push(newEl);
+        renderElements(currentFloor.elements);
+        renderElementList(currentFloor.elements);
+        openElementProps(newEl);
+        toast("Element duplicated", "success");
+      } catch (err) {
+        toast(`Error duplicating: ${err.message}`, "error");
+      }
+    });
+  }
+
   $("btnAddFloor").addEventListener("click", () => {
     $("newFloorName").value = "";
     show("addFloorModal");
@@ -772,4 +832,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("addFloorModal").addEventListener("click", (e) => {
     if (e.target === $("addFloorModal")) hide("addFloorModal");
   });
+
+  // Quick position modal close
+  const quickModal = $("quickPositionModal");
+  if (quickModal) {
+    quickModal.addEventListener("click", (e) => {
+      if (e.target === quickModal) hide(quickModal);
+    });
+  }
+
+  const cancelQuickBtn = $("btnCancelQuickPosition");
+  if (cancelQuickBtn) {
+    cancelQuickBtn.addEventListener("click", () => hide($("quickPositionModal")));
+  }
 });
