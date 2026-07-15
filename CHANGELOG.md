@@ -1,17 +1,14 @@
 # Changelog
 
+## 1.2.8
+
+- Added quick actions `Open Cover` and `Close Cover` for easy full open/close of covers from Lovelace buttons and config panel.
+- Improved `more-info` support for dynamic position selection via native HA dialog.
+- Fixed syntax issues and function definitions in `app.js`.
+
+## 1.2.7
+- User manual fixes for service call feature.
+
 ## 1.2.6
-
-- Fixed critical JavaScript errors: `openElementProps is not defined` and `saveElementProps is not defined`.
-- Moved property panel functions (`openElementProps`, `saveElementProps`, `updateActionFields`) to the top of the file.
-- Fixed `escapeHtml` quoting that was breaking the entire script.
-- Clean, complete `app.js` with all original functionality preserved.
-
-## 1.2.5
-- User manual fixes.
-
-## 1.2.4
-- Service call feature implementation.
-
-## 1.2.1
-- Startup improvements with run.sh.
+- Fixed `openElementProps` and `saveElementProps` not defined.
+- Corrected `escapeHtml` function.
