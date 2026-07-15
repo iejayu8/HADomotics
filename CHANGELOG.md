@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0
+## 1.3.1
 
 - Bumped version to force update detection after repeated escapeHtml issues.
 - Full clean app.js with correct escapeHtml function.
