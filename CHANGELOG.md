@@ -1,9 +1,9 @@
 # Changelog
 
-## 1.5.0
+## 1.6.0
 
-- Forced version bump to 1.5.0 to improve update detection in Home Assistant addon store.
-- Quick-position modal and Duplicate button implemented and functional.
-
-## 1.4.0
-- Added quick-position and duplicate features.
+- Major version bump (1.6.0) for improved Home Assistant addon update detection.
+- Full implementation of Quick Position Selector modal (0/25/50/75/100%).
+- Functional Duplicate button in properties panel.
+- Removed old open/close actions.
+- Clean escapeHtml and complete app.js.
