@@ -48,10 +48,10 @@ function toast(msg, type = "info", duration = 3000) {
 
 function escapeHtml(str) {
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/"/g, """);
 }
 
 async function apiFetch(path, options = {}) {
@@ -361,7 +361,7 @@ async function handleElementTap(el, overlayEl) {
 
   if (action === "none") return;
 
-  if (!el.entity_id && action !== "call-service") {
+  if (!el.entity_id && !["call-service", "open", "close"].includes(action)) {
     toast("No entity configured for this element", "warn");
     return;
   }
@@ -390,6 +390,18 @@ async function handleElementTap(el, overlayEl) {
         body: JSON.stringify({ entity_id: el.entity_id, position }),
       });
     } 
+    else if (action === "open") {
+      await apiFetch(`/api/ha/services/cover/open_cover`, {
+        method: "POST",
+        body: JSON.stringify({ entity_id: el.entity_id }),
+      });
+    } 
+    else if (action === "close") {
+      await apiFetch(`/api/ha/services/cover/close_cover`, {
+        method: "POST",
+        body: JSON.stringify({ entity_id: el.entity_id }),
+      });
+    } 
     else if (action === "call-service") {
       if (!el.service) {
         toast("No service configured", "error");
@@ -412,6 +424,7 @@ async function handleElementTap(el, overlayEl) {
       });
     } 
     else {
+      // Default: toggle
       const [domain] = el.entity_id.split(".");
       await apiFetch(`/api/ha/services/${domain}/toggle`, {
         method: "POST",
