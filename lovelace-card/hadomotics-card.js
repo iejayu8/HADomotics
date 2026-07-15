@@ -522,7 +522,7 @@ class HADomoticsCard extends HTMLElement {
   /* ── User interaction ── */
 
   async _handleTap(el, btnEl) {
-    if (!el.entity_id || !this._hass) return;
+    if (!el.entity_id && !el.service) return;
     const action = el.tap_action || "toggle";
 
     if (action === "more-info") {
@@ -540,45 +540,41 @@ class HADomoticsCard extends HTMLElement {
       this.dispatchEvent(evt);
       return;
     }
-    if (action === "service") {
+
     btnEl.classList.add("loading");
 
     try {
+      if (action === "set_position") {
+        const position = parseInt(el.position) || 50;
+        await this._hass.callService("cover", "set_cover_position", {
+          entity_id: el.entity_id,
+          position: position
+        });
+      } else if (action === "open") {
+        await this._hass.callService("cover", "open_cover", {
+          entity_id: el.entity_id
+        });
+      } else if (action === "close") {
+        await this._hass.callService("cover", "close_cover", {
+          entity_id: el.entity_id
+        });
+      } else if (action === "call-service") {
         const [domain, service] = el.service.split(".");
-
-        console.log(
-            "HADomotics -> Calling service:",
-            domain,
-            service,
-            {
-                entity_id: el.entity_id,
-                ...(el.service_data || {})
-            }
-        );
-
         await this._hass.callService(
-            domain,
-            service,
-            {
-                entity_id: el.entity_id,
-                ...(el.service_data || {})
-            }
+          domain,
+          service,
+          {
+            entity_id: el.entity_id,
+            ...(el.service_data || {})
+          }
         );
-
+      } else {
+        // Default: toggle
+        const [domain] = el.entity_id.split(".");
+        await this._hass.callService(domain, "toggle", { entity_id: el.entity_id });
+      }
     } catch (err) {
-        console.error("HADomotics Service Error", err);
-    } finally {
-        btnEl.classList.remove("loading");
-    }
-    return;
-    }
-    // Default: toggle
-    btnEl.classList.add("loading");
-    try {
-      const [domain] = el.entity_id.split(".");
-      await this._hass.callService(domain, "toggle", { entity_id: el.entity_id });
-    } catch (err) {
-      console.error("HADomotics: service call failed", err);
+      console.error("HADomotics Service Error", err);
     } finally {
       btnEl.classList.remove("loading");
     }
@@ -647,10 +643,10 @@ class HADomoticsCard extends HTMLElement {
 
   _escHtml(str) {
     return String(str ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/&/g, "&")
+      .replace(/</g, "<")
+      .replace(/>/g, ">")
+      .replace(/"/g, """);
   }
 }
 
@@ -719,10 +715,10 @@ class HADomoticsCardEditor extends HTMLElement {
 
   _escHtml(str) {
     return String(str ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/&/g, "&")
+      .replace(/</g, "<")
+      .replace(/>/g, ">")
+      .replace(/"/g, """);
   }
 }
 
