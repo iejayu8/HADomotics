@@ -36,6 +36,22 @@
         </div>
         <ul class="element-list" id="elementList"></ul>
       </section>
+
+      <!-- Backup / Restore section -->
+      <section class="sidebar-section backup-section">
+        <div class="section-header">
+          <h2>Backup</h2>
+        </div>
+        <div class="backup-buttons">
+          <button class="btn btn-secondary" id="btnExportConfig">
+            <span class="material-icons">download</span> Export
+          </button>
+          <button class="btn btn-secondary" id="btnImportConfig">
+            <span class="material-icons">upload</span> Import
+          </button>
+          <input type="file" id="importFileInput" accept=".json" style="display:none" />
+        </div>
+      </section>
     </aside>
 
     <!-- Editor -->
