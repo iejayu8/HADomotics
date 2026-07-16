@@ -6,9 +6,25 @@
   <title>HADomotics – Configuration</title>
   <link rel="stylesheet" href="static/css/style.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+  <style>
+    .sidebar {
+      transition: width 0.3s ease, padding 0.3s ease;
+      overflow: hidden;
+    }
+    .sidebar.collapsed {
+      width: 0 !important;
+      padding: 0 !important;
+      border-right: none;
+    }
+  </style>
 </head>
 <body>
   <header class="app-header">
+    <!-- Botón de ocultar sidebar movido a la IZQUIERDA -->
+    <button class="icon-btn" id="btnToggleSidebar" title="Hide Sidebar">
+      <span class="material-icons">chevron_left</span>
+    </button>
+
     <span class="material-icons header-icon">floor_plan</span>
     <h1>HADomotics</h1>
     <span class="header-subtitle">Interactive Floor Plan</span>
@@ -16,7 +32,7 @@
 
   <main class="app-layout">
     <!-- Sidebar -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <section class="sidebar-section">
         <div class="section-header">
           <h2>Floors</h2>
@@ -37,8 +53,8 @@
         <ul class="element-list" id="elementList"></ul>
       </section>
 
-      <!-- Backup / Restore section -->
-      <section class="sidebar-section backup-section">
+      <!-- Backup section (solo en Edit Mode) -->
+      <section class="sidebar-section backup-section" id="backupSection">
         <div class="section-header">
           <h2>Backup</h2>
         </div>
@@ -89,8 +105,9 @@
       </div>
     </div>
 
-    <!-- Properties panel -->
+    <!-- Properties Panel -->
     <aside class="properties-panel" id="propertiesPanel" style="display:none">
+      <!-- (contenido sin cambios) -->
       <div class="panel-header">
         <h2 id="propPanelTitle">Element</h2>
         <button class="icon-btn" id="btnCloseProps">
@@ -159,18 +176,16 @@
           </select>
         </div>
 
-        <!-- Position for set_position -->
         <div class="form-group" id="positionGroup" style="display: none;">
           <label for="propPosition">Position (0-100)</label>
           <input type="number" id="propPosition" min="0" max="100" step="1" value="50" />
           <small>Porcentaje de apertura de la persiana</small>
         </div>
 
-        <!-- General service fields -->
         <div class="form-group" id="serviceGroup" style="display: none;">
           <label for="propService">Service (domain.service)</label>
           <input type="text" id="propService" placeholder="cover.set_cover_position" />
-          <small>Ej: cover.set_cover_position, light.turn_on, scene.turn_on</small>
+          <small>Ej: cover.set_cover_position, light.turn_on</small>
         </div>
 
         <div class="form-group" id="serviceDataGroup" style="display: none;">
@@ -209,16 +224,14 @@
   <div class="modal-overlay" id="quickPositionModal" style="display:none">
     <div class="modal">
       <h2 id="quickPositionTitle">Select Position</h2>
-      <div class="quick-position-grid" id="quickPositionGrid">
-        <!-- Populated by JS -->
-      </div>
+      <div class="quick-position-grid" id="quickPositionGrid"></div>
       <div class="modal-actions">
         <button class="btn" id="btnCancelQuickPosition">Cancel</button>
       </div>
     </div>
   </div>
 
-  <!-- Add Floor Dialog -->
+  <!-- Add Floor Modal -->
   <div class="modal-overlay" id="addFloorModal" style="display:none">
     <div class="modal">
       <h2>Add Floor</h2>

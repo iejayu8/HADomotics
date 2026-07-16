@@ -48,9 +48,9 @@ function toast(msg, type = "info", duration = 3000) {
 
 function escapeHtml(str) {
   return String(str)
-    .replace(/&/g, "&amp")
-    .replace(/</g, "&lt")
-    .replace(/>/g, "&gt")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
 
@@ -67,7 +67,7 @@ async function apiFetch(path, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Dynamic form fields + Element properties (defined early)
+// Dynamic form fields + Element properties
 // ---------------------------------------------------------------------------
 
 function updateActionFields() {
@@ -342,7 +342,7 @@ function updateElementStates() {
 
 function startStatePolling() {
   fetchEntityStates();
-  statePollingTimer = setInterval(fetchEntityStates, 5000);
+  statePollingTimer = setInterval(fetchEntityStates, 5000); // Cada 5 segundos (buen equilibrio)
 }
 
 function stopStatePolling() {
@@ -354,7 +354,7 @@ function stopStatePolling() {
 }
 
 // ---------------------------------------------------------------------------
-// Quick Position Modal helpers
+// Quick Position Modal
 // ---------------------------------------------------------------------------
 function showQuickPositionModal(el) {
   const modal = $("quickPositionModal");
@@ -475,12 +475,18 @@ async function handleElementTap(el, overlayEl) {
 }
 
 // ---------------------------------------------------------------------------
-// Mode switching + other functions
+// Mode switching
 // ---------------------------------------------------------------------------
 
 function setViewMode(enabled) {
   viewMode = enabled;
   const btn = $("btnToggleMode");
+
+  // Mostrar / Ocultar sección de Backup solo en Edit Mode
+  const backupSection = $("backupSection");
+  if (backupSection) {
+    backupSection.style.display = enabled ? "none" : "block";
+  }
 
   if (enabled) {
     if (pendingPlacement) {
@@ -494,7 +500,7 @@ function setViewMode(enabled) {
     btn.title = "Switch to Edit Mode";
     document.querySelectorAll(".edit-only").forEach((el) => hide(el));
     $("btnAddElement").disabled = true;
-    startStatePolling();
+    startStatePolling();           // ← Polling activo en View Mode
   } else {
     btn.innerHTML = '<span class="material-icons">visibility</span> View Mode';
     btn.classList.remove("active");
@@ -514,6 +520,10 @@ function setViewMode(enabled) {
     renderElements(currentFloor.elements || []);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Otras funciones
+// ---------------------------------------------------------------------------
 
 async function selectFloor(floorId) {
   try {
@@ -712,6 +722,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadFloors();
   setViewMode(true);
 
+  // Toggle Sidebar button (ahora a la izquierda)
+  const toggleSidebarBtn = $("btnToggleSidebar");
+  if (toggleSidebarBtn) {
+    toggleSidebarBtn.addEventListener("click", () => {
+      const sidebar = $("sidebar");
+      sidebar.classList.toggle("collapsed");
+      const icon = toggleSidebarBtn.querySelector(".material-icons");
+      if (sidebar.classList.contains("collapsed")) {
+        icon.textContent = "chevron_right";
+        toggleSidebarBtn.title = "Show Sidebar";
+      } else {
+        icon.textContent = "chevron_left";
+        toggleSidebarBtn.title = "Hide Sidebar";
+      }
+    });
+  }
+
   // Duplicate button
   const duplicateBtn = $("btnDuplicateElement");
   if (duplicateBtn) {
@@ -861,7 +888,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Export / Import Configuration
+// Export / Import Configuration (COMPLETAS)
 // ---------------------------------------------------------------------------
 
 async function exportConfiguration() {
