@@ -792,23 +792,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     await selectFloor(sorted[0].id);
   }
 
-  // Toggle Sidebar button (ahora a la izquierda)
-  const toggleSidebarBtn = $("btnToggleSidebar");
-  if (toggleSidebarBtn) {
-    toggleSidebarBtn.addEventListener("click", () => {
-      const sidebar = $("sidebar");
-      sidebar.classList.toggle("collapsed");
-      const icon = toggleSidebarBtn.querySelector(".material-icons");
-      if (sidebar.classList.contains("collapsed")) {
-        icon.textContent = "chevron_right";
-        toggleSidebarBtn.title = "Show Sidebar";
-      } else {
-        icon.textContent = "chevron_left";
-        toggleSidebarBtn.title = "Hide Sidebar";
-      }
-    });
-  }
-
   // Duplicate button
   const duplicateBtn = $("btnDuplicateElement");
   if (duplicateBtn) {
