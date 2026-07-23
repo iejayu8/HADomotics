@@ -263,7 +263,9 @@ function renderFloorCanvas(floor) {
     show(cc, "inline-block");
     img.src = `${API}/api/images/${floor.image}?t=${Date.now()}`;
     img.onload = () => renderElements(floor.elements || []);
-  }
+    // Pequeño delay para que el layout se calcule bien
+    setTimeout(fitFloorPlan, 50);
+  };
 }
 
 function renderElements(elements) {
@@ -582,6 +584,8 @@ function setViewMode(enabled) {
   if (currentFloor && currentFloor.image) {
     renderElements(currentFloor.elements || []);
   }
+  // Pequeño delay para que el layout se calcule bien
+  setTimeout(fitFloorPlan, 50);
 }
 
 // ---------------------------------------------------------------------------
@@ -601,6 +605,8 @@ async function selectFloor(floorId) {
     renderFloorCanvas(currentFloor);
     hide("propertiesPanel");
     renderFloorSwitcher();
+    // Pequeño delay para que el layout se calcule bien
+    setTimeout(fitFloorPlan, 50);
   } catch (err) {
     toast(`Error loading floor: ${err.message}`, "error");
   }
@@ -938,10 +944,44 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (cancelQuickBtn) {
     cancelQuickBtn.addEventListener("click", () => hide($("quickPositionModal")));
   }
+
+  // Ajuste automático del plano al redimensionar
+  window.addEventListener("resize", () => {
+    // Pequeño delay para que el layout se calcule bien
+    setTimeout(fitFloorPlan, 50);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Export / Import Configuration (COMPLETAS)
+// Imagen del floor plan: ajuste automático al contenedor
+// ---------------------------------------------------------------------------
+function fitFloorPlan() {
+  const wrapper = $("canvasWrapper");
+  const container = $("canvasContainer");
+  const img = $("floorImage");
+
+  if (!wrapper || !container || !img || !img.naturalWidth) return;
+
+  // Quitamos el scale anterior para medir bien
+  container.style.transform = "none";
+
+  const availableWidth = wrapper.clientWidth - 24;
+  const availableHeight = wrapper.clientHeight - 24;
+
+  if (availableWidth <= 0 || availableHeight <= 0) return;
+
+  const scaleX = availableWidth / img.naturalWidth;
+  const scaleY = availableHeight / img.naturalHeight;
+
+  // Escala para que quepa en ambos ejes (sin superar el 100%)
+  const scale = Math.min(scaleX, scaleY, 1);
+
+  container.style.transform = `scale(${scale})`;
+  container.style.transformOrigin = "top left";
+}
+
+// ---------------------------------------------------------------------------
+// Export / Import Configuration
 // ---------------------------------------------------------------------------
 
 async function exportConfiguration() {
