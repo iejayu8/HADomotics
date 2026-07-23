@@ -1,5 +1,7 @@
 HADomotics is a project structured into multiple components, including a backend module, a custom Lovelace card, and a test suite. This repository contains the source code, configuration files, and development assets for the project.
 
+Latest addon version: 1.8.0
+
 **Repository Structure**
 
 hadomotics/        # Core project module
@@ -39,4 +41,5 @@ To work with the repository:
 2. Explore the module directories (hadomotics/, lovelace-card/)
 3. Review the test suite in tests/
 4. Check CHANGELOG.md for version history
-5. Use server.log for debugging or runtime insights
+5. Use the latest addon version 1.8.0 when installing or updating the add-on
+6. Use server.log for debugging or runtime insights
