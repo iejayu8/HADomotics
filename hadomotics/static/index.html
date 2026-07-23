@@ -16,6 +16,34 @@
       padding: 0 !important;
       border-right: none;
     }
+    .floor-switcher {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .floor-switcher .floor-btn {
+      padding: 4px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color, #444);
+      background: var(--surface, #2a2a2a);
+      color: var(--text, #eee);
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.15s ease;
+    }
+
+    .floor-switcher .floor-btn:hover {
+      background: var(--primary, #4CAF50);
+      border-color: var(--primary, #4CAF50);
+      color: white;
+    }
+
+    .floor-switcher .floor-btn.active {
+      background: var(--primary, #4CAF50);
+      border-color: var(--primary, #4CAF50);
+      color: white;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -85,6 +113,8 @@
         <button class="toolbar-btn toolbar-mode-btn" id="btnToggleMode" title="Switch to View Mode">
           <span class="material-icons">visibility</span> View Mode
         </button>
+        <!-- NUEVO: Botones de floors (solo visibles en View Mode) -->
+        <div id="floorSwitcher" class="floor-switcher" style="display: none; margin-left: 12px; gap: 6px; display: none;"></div>
       </div>
 
       <div class="canvas-wrapper" id="canvasWrapper">

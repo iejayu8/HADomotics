@@ -178,6 +178,34 @@ function renderFloorList() {
     });
     ul.appendChild(li);
   });
+  renderFloorSwitcher();
+}
+
+function renderFloorSwitcher() {
+  const container = $("floorSwitcher");
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  if (!floors || floors.length === 0) {
+    container.style.display = "none";
+    return;
+  }
+
+  const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  sorted.forEach((f) => {
+    const btn = document.createElement("button");
+    btn.className = "floor-btn" + (currentFloor && currentFloor.id === f.id ? " active" : "");
+    btn.textContent = f.name;
+    btn.title = `Ir a ${f.name}`;
+    btn.addEventListener("click", () => {
+      if (!currentFloor || currentFloor.id !== f.id) {
+        selectFloor(f.id);
+      }
+    });
+    container.appendChild(btn);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -483,7 +511,19 @@ function setViewMode(enabled) {
   const btn = $("btnToggleMode");
   const sidebar = $("sidebar");
   const toggleBtn = $("btnToggleSidebar");
+  const floorSwitcher = $("floorSwitcher");
 
+  // === Mostrar / Ocultar botones de floors según el modo ===
+  if (floorSwitcher) {
+    if (enabled) {
+      // View Mode → mostrar botones de floors
+      floorSwitcher.style.display = "flex";
+      renderFloorSwitcher();
+    } else {
+      // Edit Mode → ocultar botones de floors (se usan los del sidebar)
+      floorSwitcher.style.display = "none";
+    }
+  }
   // === Control automático del sidebar según el modo ===
   if (sidebar) {
     if (enabled) {
@@ -560,6 +600,7 @@ async function selectFloor(floorId) {
     renderElementList(currentFloor.elements || []);
     renderFloorCanvas(currentFloor);
     hide("propertiesPanel");
+    renderFloorSwitcher();
   } catch (err) {
     toast(`Error loading floor: ${err.message}`, "error");
   }
