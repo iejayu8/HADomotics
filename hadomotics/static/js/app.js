@@ -481,6 +481,29 @@ async function handleElementTap(el, overlayEl) {
 function setViewMode(enabled) {
   viewMode = enabled;
   const btn = $("btnToggleMode");
+  const sidebar = $("sidebar");
+  const toggleBtn = $("btnToggleSidebar");
+
+  // === Control automático del sidebar según el modo ===
+  if (sidebar) {
+    if (enabled) {
+      // View Mode → ocultar sidebar
+      sidebar.classList.add("collapsed");
+      if (toggleBtn) {
+        const icon = toggleBtn.querySelector(".material-icons");
+        if (icon) icon.textContent = "chevron_right";
+        toggleBtn.title = "Show Sidebar";
+      }
+    } else {
+      // Edit Mode → mostrar sidebar
+      sidebar.classList.remove("collapsed");
+      if (toggleBtn) {
+        const icon = toggleBtn.querySelector(".material-icons");
+        if (icon) icon.textContent = "chevron_left";
+        toggleBtn.title = "Hide Sidebar";
+      }
+    }
+  }
 
   // Mostrar / Ocultar sección de Backup solo en Edit Mode
   const backupSection = $("backupSection");
@@ -500,7 +523,7 @@ function setViewMode(enabled) {
     btn.title = "Switch to Edit Mode";
     document.querySelectorAll(".edit-only").forEach((el) => hide(el));
     $("btnAddElement").disabled = true;
-    startStatePolling();           // ← Polling activo en View Mode
+    startStatePolling();
   } else {
     btn.innerHTML = '<span class="material-icons">visibility</span> View Mode';
     btn.classList.remove("active");
