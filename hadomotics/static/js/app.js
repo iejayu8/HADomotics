@@ -745,6 +745,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadFloors();
   setViewMode(true);
 
+  // Al iniciar, mostrar automáticamente el primer floor en View Mode
+  if (floors.length > 0) {
+    const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    await selectFloor(sorted[0].id);
+  }
+
   // Toggle Sidebar button (ahora a la izquierda)
   const toggleSidebarBtn = $("btnToggleSidebar");
   if (toggleSidebarBtn) {

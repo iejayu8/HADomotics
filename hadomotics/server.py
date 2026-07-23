@@ -73,8 +73,6 @@ def _safe_path_within(base_dir: Path, filename: str) -> Path | None:
 
 DEFAULT_FLOORS = [
     {"id": "floor1", "name": "Floor 1", "order": 0, "image": None, "elements": []},
-    {"id": "floor2", "name": "Floor 2", "order": 1, "image": None, "elements": []},
-    {"id": "garden", "name": "Garden", "order": 2, "image": None, "elements": []},
 ]
 
 
