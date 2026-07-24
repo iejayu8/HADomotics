@@ -38,7 +38,6 @@ body {
   overflow: hidden;
 }
 
-/* ── Header ── */
 .app-header {
   height: var(--header-h);
   background: var(--header-bg);
@@ -66,14 +65,12 @@ body {
   margin-left: 4px;
 }
 
-/* ── Layout ── */
 .app-layout {
   display: flex;
   flex: 1;
   overflow: hidden;
 }
 
-/* ── Sidebar ── */
 .sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
@@ -105,7 +102,6 @@ body {
   color: var(--text-secondary);
 }
 
-/* ── Editor area ── */
 .editor-area {
   flex: 1;
   display: flex;
@@ -165,7 +161,6 @@ body {
   background: #fff;
 }
 
-/* ── Element overlays ── */
 .element-overlay {
   position: absolute;
   border-radius: 6px;
@@ -177,7 +172,7 @@ body {
   cursor: move;
   user-select: none;
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
   padding: 4px;
   text-align: center;
   overflow: hidden;
@@ -186,6 +181,13 @@ body {
 .element-overlay.view-mode {
   cursor: pointer;
   box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+}
+
+/* Visual tap feedback */
+.element-overlay.tapped {
+  transform: scale(0.88) !important;
+  opacity: 0.75;
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.45);
 }
 
 .element-overlay.selected {
@@ -223,7 +225,6 @@ body {
   z-index: 20;
 }
 
-/* Properties Panel */
 .properties-panel {
   width: var(--props-w);
   background: var(--surface);
@@ -292,7 +293,6 @@ small {
   color: #666;
 }
 
-/* Form actions */
 .form-actions {
   margin-top: 12px;
   display: flex;
@@ -321,7 +321,6 @@ small {
   color: white;
 }
 
-/* Toast */
 .toast-container {
   position: fixed;
   bottom: 20px;
@@ -344,7 +343,6 @@ small {
   animation: toastIn 0.3s;
 }
 
-/* Modal */
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -363,7 +361,6 @@ small {
   box-shadow: var(--shadow);
 }
 
-/* Responsive adjustments */
 @media (max-width: 900px) {
   .properties-panel { width: 240px; }
 }
@@ -395,7 +392,7 @@ small {
 .canvas-wrapper {
   width: 100%;
   height: 100%;
-  overflow: hidden;          /* evita barras de scroll innecesarias */
+  overflow: hidden;
   display: flex;
   justify-content: flex-start;
   align-items: flex-start;
@@ -405,7 +402,7 @@ small {
 
 #canvasContainer {
   position: relative;
-  display: inline-block;     /* se adapta al tamaño real de la imagen */
+  display: inline-block;
   transform-origin: top left;
 }
 
