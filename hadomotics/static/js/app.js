@@ -48,10 +48,10 @@ function toast(msg, type = "info", duration = 3000) {
 
 function escapeHtml(str) {
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/"/g, """);
 }
 
 async function apiFetch(path, options = {}) {
@@ -263,9 +263,8 @@ function renderFloorCanvas(floor) {
     show(cc, "inline-block");
     img.src = `${API}/api/images/${floor.image}?t=${Date.now()}`;
     img.onload = () => renderElements(floor.elements || []);
-    // Pequeño delay para que el layout se calcule bien
     setTimeout(fitFloorPlan, 50);
-  };
+  }
 }
 
 function renderElements(elements) {
@@ -372,7 +371,7 @@ function updateElementStates() {
 
 function startStatePolling() {
   fetchEntityStates();
-  statePollingTimer = setInterval(fetchEntityStates, 5000); // Cada 5 segundos (buen equilibrio)
+  statePollingTimer = setInterval(fetchEntityStates, 5000);
 }
 
 function stopStatePolling() {
@@ -455,13 +454,13 @@ async function handleElementTap(el, overlayEl) {
         method: "POST",
         body: JSON.stringify({ entity_id: el.entity_id, position }),
       });
-    } 
+    }
     else if (action === "quick-position") {
       showQuickPositionModal(el);
       overlayEl.style.opacity = "";
       overlayEl.style.pointerEvents = "";
       return;
-    } 
+    }
     else if (action === "call-service") {
       if (!el.service) {
         toast("No service configured", "error");
@@ -482,7 +481,7 @@ async function handleElementTap(el, overlayEl) {
         method: "POST",
         body: JSON.stringify(data),
       });
-    } 
+    }
     else {
       const [domain] = el.entity_id.split(".");
       await apiFetch(`/api/ha/services/${domain}/toggle`, {
@@ -515,21 +514,22 @@ function setViewMode(enabled) {
   const toggleBtn = $("btnToggleSidebar");
   const floorSwitcher = $("floorSwitcher");
 
+  // Auto-hide app header in View Mode (more screen space on wall displays)
+  document.body.classList.toggle("view-mode-active", enabled);
+
   // === Mostrar / Ocultar botones de floors según el modo ===
   if (floorSwitcher) {
     if (enabled) {
-      // View Mode → mostrar botones de floors
       floorSwitcher.style.display = "flex";
       renderFloorSwitcher();
     } else {
-      // Edit Mode → ocultar botones de floors (se usan los del sidebar)
       floorSwitcher.style.display = "none";
     }
   }
+
   // === Control automático del sidebar según el modo ===
   if (sidebar) {
     if (enabled) {
-      // View Mode → ocultar sidebar
       sidebar.classList.add("collapsed");
       if (toggleBtn) {
         const icon = toggleBtn.querySelector(".material-icons");
@@ -537,7 +537,6 @@ function setViewMode(enabled) {
         toggleBtn.title = "Show Sidebar";
       }
     } else {
-      // Edit Mode → mostrar sidebar
       sidebar.classList.remove("collapsed");
       if (toggleBtn) {
         const icon = toggleBtn.querySelector(".material-icons");
@@ -584,7 +583,6 @@ function setViewMode(enabled) {
   if (currentFloor && currentFloor.image) {
     renderElements(currentFloor.elements || []);
   }
-  // Pequeño delay para que el layout se calcule bien
   setTimeout(fitFloorPlan, 50);
 }
 
@@ -605,7 +603,6 @@ async function selectFloor(floorId) {
     renderFloorCanvas(currentFloor);
     hide("propertiesPanel");
     renderFloorSwitcher();
-    // Pequeño delay para que el layout se calcule bien
     setTimeout(fitFloorPlan, 50);
   } catch (err) {
     toast(`Error loading floor: ${err.message}`, "error");
@@ -792,13 +789,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadFloors();
   setViewMode(true);
 
-  // Al iniciar, mostrar automáticamente el primer floor en View Mode
   if (floors.length > 0) {
     const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     await selectFloor(sorted[0].id);
   }
 
-  // Duplicate button
   const duplicateBtn = $("btnDuplicateElement");
   if (duplicateBtn) {
     duplicateBtn.addEventListener("click", async () => {
@@ -826,7 +821,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Export / Import
   const exportBtn = $("btnExportConfig");
   if (exportBtn) exportBtn.addEventListener("click", exportConfiguration);
 
@@ -932,7 +926,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (e.target === $("addFloorModal")) hide("addFloorModal");
   });
 
-  // Quick position modal close
   const quickModal = $("quickPositionModal");
   if (quickModal) {
     quickModal.addEventListener("click", (e) => {
@@ -945,9 +938,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     cancelQuickBtn.addEventListener("click", () => hide($("quickPositionModal")));
   }
 
-  // Ajuste automático del plano al redimensionar
   window.addEventListener("resize", () => {
-    // Pequeño delay para que el layout se calcule bien
     setTimeout(fitFloorPlan, 50);
   });
 });
@@ -962,7 +953,6 @@ function fitFloorPlan() {
 
   if (!wrapper || !container || !img || !img.naturalWidth) return;
 
-  // Quitamos el scale anterior para medir bien
   container.style.transform = "none";
 
   const availableWidth = wrapper.clientWidth - 24;
@@ -972,8 +962,6 @@ function fitFloorPlan() {
 
   const scaleX = availableWidth / img.naturalWidth;
   const scaleY = availableHeight / img.naturalHeight;
-
-  // Escala para que quepa en ambos ejes (sin superar el 100%)
   const scale = Math.min(scaleX, scaleY, 1);
 
   container.style.transform = `scale(${scale})`;
