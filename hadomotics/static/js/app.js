@@ -98,6 +98,7 @@ function openElementProps(el) {
   if ($("propPosition")) $("propPosition").value = el.position || 50;
   if ($("propService")) $("propService").value = el.service || "";
   if ($("propServiceData")) $("propServiceData").value = el.service_data || "";
+  if ($("propStatePosition")) $("propStatePosition").value = el.state_position || "bottom";
 
   show("propertiesPanel");
   updateActionFields();
@@ -122,6 +123,7 @@ function saveElementProps(e) {
     position: parseInt($("propPosition")?.value) || 50,
     service: $("propService")?.value?.trim() || "",
     service_data: $("propServiceData")?.value?.trim() || "",
+    state_position: $("propStatePosition")?.value || "bottom",
   };
 
   apiFetch(`/api/floors/${currentFloor.id}/elements/${currentElement.id}`, {
@@ -299,7 +301,11 @@ function renderElements(elements) {
 
   elements.forEach((el) => {
     const div = document.createElement("div");
-    div.className = "element-overlay" + (viewMode ? " view-mode" : "");
+    const statePos = el.state_position || "bottom";
+    
+
+    div.className = "element-overlay" + (viewMode ? " view-mode" : "") +
+      (statePos !== "none" ? ` state-pos-${statePos}` : "");
     div.dataset.id = el.id;
 
     const rotation = parseFloat(el.rotation) || 0;
@@ -321,8 +327,8 @@ function renderElements(elements) {
     div.innerHTML = `
       <span class="material-icons el-icon">${typeIcon(el.type)}</span>
       <span class="el-label">${escapeHtml(el.label || "")}</span>
-      ${stateText ? `<span class="el-state">${escapeHtml(stateText)}</span>` : ""}
-      ${!viewMode ? '<div class="resize-handle"></div>' : ''}
+      ${stateText && statePos !== "none" ? `<span class="el-state">${escapeHtml(stateText)}</span>` : ""}
+      ${!viewMode ? '<div class="resize-handle"></div>' : ""}
     `;
 
     if (!viewMode) {
@@ -396,15 +402,18 @@ function updateElementStates() {
     overlay.style.background = _getElementBackground(el);
 
     // Update live state text
+    const statePos = el.state_position || "bottom";
     const stateText = _getElementStateText(el);
+    // actualizar clase de posición
+    overlay.classList.remove("state-pos-top", "state-pos-bottom", "state-pos-left", "state-pos-right");
+    if (statePos !== "none") overlay.classList.add(`state-pos-${statePos}`);
+
     let stateEl = overlay.querySelector(".el-state");
-    if (stateText) {
+    if (stateText && statePos !== "none") {
       if (!stateEl) {
         stateEl = document.createElement("span");
         stateEl.className = "el-state";
-        const label = overlay.querySelector(".el-label");
-        if (label) label.after(stateEl);
-        else overlay.appendChild(stateEl);
+        overlay.appendChild(stateEl);
       }
       stateEl.textContent = stateText;
     } else if (stateEl) {
