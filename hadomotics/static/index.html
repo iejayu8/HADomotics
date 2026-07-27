@@ -132,7 +132,6 @@
 
     <!-- Properties Panel -->
     <aside class="properties-panel" id="propertiesPanel" style="display:none">
-      <!-- (contenido sin cambios) -->
       <div class="panel-header">
         <h2 id="propPanelTitle">Element</h2>
         <button class="icon-btn" id="btnCloseProps">
@@ -228,6 +227,18 @@
             <label for="propHeight">Height (px)</label>
             <input type="number" id="propHeight" min="20" max="400" value="30" />
           </div>
+        </div>
+
+        <div class="form-group">
+          <label for="propStatePosition">Posición del estado</label>
+          <select id="propStatePosition">
+            <option value="bottom">Abajo</option>
+            <option value="top">Arriba</option>
+            <option value="left">Izquierda</option>
+            <option value="right">Derecha</option>
+            <option value="none">Oculto</option>
+          </select>
+          <small>Dónde mostrar el valor (sensor, %, temperatura…)</small>
         </div>
 
         <div class="form-actions">
