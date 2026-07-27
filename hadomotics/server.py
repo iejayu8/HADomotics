@@ -326,6 +326,7 @@ def create_element(floor_id: str):
         "color_on": data.get("color_on", "#4CAF50"),
         "color_off": data.get("color_off", "#9E9E9E"),
         "tap_action": data.get("tap_action", "toggle"),
+        "state_position": data.get("state_position", "bottom"),
     }
     floor.setdefault("elements", []).append(element)
     save_config(config)
@@ -345,10 +346,12 @@ def update_element(floor_id: str, element_id: str):
         return jsonify({"error": "Element not found"}), 404
 
     data = request.get_json(force=True)
-    
-    # Lista actualizada con 'rotation'
-    updatable = ["type", "label", "entity_id", "icon", "x", "y", "width", "height",
-                 "color_on", "color_off", "tap_action", "rotation"]
+
+    updatable = [
+        "type", "label", "entity_id", "icon", "x", "y", "width", "height",
+        "color_on", "color_off", "tap_action", "rotation", "state_position",
+        "position", "service", "service_data",
+    ]
 
     for key in updatable:
         if key in data:
