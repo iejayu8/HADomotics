@@ -98,6 +98,7 @@ function openElementProps(el) {
   if ($("propPosition")) $("propPosition").value = el.position || 50;
   if ($("propService")) $("propService").value = el.service || "";
   if ($("propServiceData")) $("propServiceData").value = el.service_data || "";
+  if ($("propStatePosition")) $("propStatePosition").value = el.state_position || "bottom";
 
   show("propertiesPanel");
   updateActionFields();
@@ -122,6 +123,7 @@ function saveElementProps(e) {
     position: parseInt($("propPosition")?.value) || 50,
     service: $("propService")?.value?.trim() || "",
     service_data: $("propServiceData")?.value?.trim() || "",
+    state_position: $("propStatePosition")?.value || "bottom",
   };
 
   apiFetch(`/api/floors/${currentFloor.id}/elements/${currentElement.id}`, {
@@ -263,9 +265,32 @@ function renderFloorCanvas(floor) {
     show(cc, "inline-block");
     img.src = `${API}/api/images/${floor.image}?t=${Date.now()}`;
     img.onload = () => renderElements(floor.elements || []);
-    // Pequeño delay para que el layout se calcule bien
     setTimeout(fitFloorPlan, 50);
-  };
+  }
+}
+
+/** Returns a short display string for sensor / climate / cover state */
+function _getElementStateText(el) {
+  if (!el.entity_id || !entityStates[el.entity_id]) return "";
+  const s = entityStates[el.entity_id];
+  const state = s.state;
+  const unit = (s.attributes && s.attributes.unit_of_measurement) || "";
+  const type = el.type || "";
+
+  // Numeric sensors and climate
+  if (type === "sensor" || type === "climate" || type === "indicator") {
+    if (state === "unavailable" || state === "unknown") return "";
+    return unit ? `${state} ${unit}` : String(state);
+  }
+
+  // Covers: show percentage if available, otherwise open/closed
+  if (type === "cover") {
+    const pos = s.attributes && s.attributes.current_position;
+    if (typeof pos === "number") return `${pos}%`;
+    return String(state);
+  }
+
+  return "";
 }
 
 function renderElements(elements) {
@@ -276,10 +301,15 @@ function renderElements(elements) {
 
   elements.forEach((el) => {
     const div = document.createElement("div");
-    div.className = "element-overlay" + (viewMode ? " view-mode" : "");
+    const statePos = el.state_position || "bottom";
+    
+
+    div.className = "element-overlay" + (viewMode ? " view-mode" : "") +
+      (statePos !== "none" ? ` state-pos-${statePos}` : "");
     div.dataset.id = el.id;
 
     const rotation = parseFloat(el.rotation) || 0;
+    const stateText = _getElementStateText(el);
 
     div.style.left = `${el.x}px`;
     div.style.top = `${el.y}px`;
@@ -297,7 +327,8 @@ function renderElements(elements) {
     div.innerHTML = `
       <span class="material-icons el-icon">${typeIcon(el.type)}</span>
       <span class="el-label">${escapeHtml(el.label || "")}</span>
-      ${!viewMode ? '<div class="resize-handle"></div>' : ''}
+      ${stateText && statePos !== "none" ? `<span class="el-state">${escapeHtml(stateText)}</span>` : ""}
+      ${!viewMode ? '<div class="resize-handle"></div>' : ""}
     `;
 
     if (!viewMode) {
@@ -366,13 +397,34 @@ function updateElementStates() {
   if (!currentFloor || !$("canvasContainer")) return;
   (currentFloor.elements || []).forEach((el) => {
     const overlay = $("canvasContainer").querySelector(`[data-id="${el.id}"]`);
-    if (overlay) overlay.style.background = _getElementBackground(el);
+    if (!overlay) return;
+
+    overlay.style.background = _getElementBackground(el);
+
+    // Update live state text
+    const statePos = el.state_position || "bottom";
+    const stateText = _getElementStateText(el);
+    // actualizar clase de posición
+    overlay.classList.remove("state-pos-top", "state-pos-bottom", "state-pos-left", "state-pos-right");
+    if (statePos !== "none") overlay.classList.add(`state-pos-${statePos}`);
+
+    let stateEl = overlay.querySelector(".el-state");
+    if (stateText && statePos !== "none") {
+      if (!stateEl) {
+        stateEl = document.createElement("span");
+        stateEl.className = "el-state";
+        overlay.appendChild(stateEl);
+      }
+      stateEl.textContent = stateText;
+    } else if (stateEl) {
+      stateEl.remove();
+    }
   });
 }
 
 function startStatePolling() {
   fetchEntityStates();
-  statePollingTimer = setInterval(fetchEntityStates, 5000); // Cada 5 segundos (buen equilibrio)
+  statePollingTimer = setInterval(fetchEntityStates, 5000);
 }
 
 function stopStatePolling() {
@@ -455,13 +507,13 @@ async function handleElementTap(el, overlayEl) {
         method: "POST",
         body: JSON.stringify({ entity_id: el.entity_id, position }),
       });
-    } 
+    }
     else if (action === "quick-position") {
       showQuickPositionModal(el);
       overlayEl.style.opacity = "";
       overlayEl.style.pointerEvents = "";
       return;
-    } 
+    }
     else if (action === "call-service") {
       if (!el.service) {
         toast("No service configured", "error");
@@ -482,7 +534,7 @@ async function handleElementTap(el, overlayEl) {
         method: "POST",
         body: JSON.stringify(data),
       });
-    } 
+    }
     else {
       const [domain] = el.entity_id.split(".");
       await apiFetch(`/api/ha/services/${domain}/toggle`, {
@@ -515,21 +567,17 @@ function setViewMode(enabled) {
   const toggleBtn = $("btnToggleSidebar");
   const floorSwitcher = $("floorSwitcher");
 
-  // === Mostrar / Ocultar botones de floors según el modo ===
   if (floorSwitcher) {
     if (enabled) {
-      // View Mode → mostrar botones de floors
       floorSwitcher.style.display = "flex";
       renderFloorSwitcher();
     } else {
-      // Edit Mode → ocultar botones de floors (se usan los del sidebar)
       floorSwitcher.style.display = "none";
     }
   }
-  // === Control automático del sidebar según el modo ===
+
   if (sidebar) {
     if (enabled) {
-      // View Mode → ocultar sidebar
       sidebar.classList.add("collapsed");
       if (toggleBtn) {
         const icon = toggleBtn.querySelector(".material-icons");
@@ -537,7 +585,6 @@ function setViewMode(enabled) {
         toggleBtn.title = "Show Sidebar";
       }
     } else {
-      // Edit Mode → mostrar sidebar
       sidebar.classList.remove("collapsed");
       if (toggleBtn) {
         const icon = toggleBtn.querySelector(".material-icons");
@@ -547,7 +594,6 @@ function setViewMode(enabled) {
     }
   }
 
-  // Mostrar / Ocultar sección de Backup solo en Edit Mode
   const backupSection = $("backupSection");
   if (backupSection) {
     backupSection.style.display = enabled ? "none" : "block";
@@ -584,7 +630,6 @@ function setViewMode(enabled) {
   if (currentFloor && currentFloor.image) {
     renderElements(currentFloor.elements || []);
   }
-  // Pequeño delay para que el layout se calcule bien
   setTimeout(fitFloorPlan, 50);
 }
 
@@ -605,7 +650,6 @@ async function selectFloor(floorId) {
     renderFloorCanvas(currentFloor);
     hide("propertiesPanel");
     renderFloorSwitcher();
-    // Pequeño delay para que el layout se calcule bien
     setTimeout(fitFloorPlan, 50);
   } catch (err) {
     toast(`Error loading floor: ${err.message}`, "error");
@@ -792,13 +836,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadFloors();
   setViewMode(true);
 
-  // Al iniciar, mostrar automáticamente el primer floor en View Mode
   if (floors.length > 0) {
     const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     await selectFloor(sorted[0].id);
   }
 
-  // Duplicate button
   const duplicateBtn = $("btnDuplicateElement");
   if (duplicateBtn) {
     duplicateBtn.addEventListener("click", async () => {
@@ -826,7 +868,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Export / Import
   const exportBtn = $("btnExportConfig");
   if (exportBtn) exportBtn.addEventListener("click", exportConfiguration);
 
@@ -932,7 +973,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (e.target === $("addFloorModal")) hide("addFloorModal");
   });
 
-  // Quick position modal close
   const quickModal = $("quickPositionModal");
   if (quickModal) {
     quickModal.addEventListener("click", (e) => {
@@ -945,9 +985,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     cancelQuickBtn.addEventListener("click", () => hide($("quickPositionModal")));
   }
 
-  // Ajuste automático del plano al redimensionar
   window.addEventListener("resize", () => {
-    // Pequeño delay para que el layout se calcule bien
     setTimeout(fitFloorPlan, 50);
   });
 });
@@ -962,7 +1000,6 @@ function fitFloorPlan() {
 
   if (!wrapper || !container || !img || !img.naturalWidth) return;
 
-  // Quitamos el scale anterior para medir bien
   container.style.transform = "none";
 
   const availableWidth = wrapper.clientWidth - 24;
@@ -972,8 +1009,6 @@ function fitFloorPlan() {
 
   const scaleX = availableWidth / img.naturalWidth;
   const scaleY = availableHeight / img.naturalHeight;
-
-  // Escala para que quepa en ambos ejes (sin superar el 100%)
   const scale = Math.min(scaleX, scaleY, 1);
 
   container.style.transform = `scale(${scale})`;

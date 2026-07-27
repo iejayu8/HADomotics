@@ -35,8 +35,16 @@ def _resolve_paths() -> tuple:
 
 DATA_DIR, IMAGES_DIR, CONFIG_FILE = _resolve_paths()
 
+# Token: en el addon usa SUPERVISOR_TOKEN; en local puedes usar HA_TOKEN
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
-HA_BASE_URL = "http://supervisor/core/api"
+HA_TOKEN = os.environ.get("HA_TOKEN", "") or SUPERVISOR_TOKEN
+
+# URL: en el addon usa supervisor; en local usa HA_URL (ej. http://192.168.1.131:8123)
+HA_URL = os.environ.get("HA_URL", "").rstrip("/")
+if HA_URL:
+    HA_BASE_URL = f"{HA_URL}/api"
+else:
+    HA_BASE_URL = "http://supervisor/core/api"
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
 
@@ -99,7 +107,7 @@ def get_floor(config: dict, floor_id: str) -> dict | None:
 
 
 def ha_headers() -> dict:
-    return {"Authorization": f"Bearer {SUPERVISOR_TOKEN}", "Content-Type": "application/json"}
+    return {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +326,7 @@ def create_element(floor_id: str):
         "color_on": data.get("color_on", "#4CAF50"),
         "color_off": data.get("color_off", "#9E9E9E"),
         "tap_action": data.get("tap_action", "toggle"),
+        "state_position": data.get("state_position", "bottom"),
     }
     floor.setdefault("elements", []).append(element)
     save_config(config)
@@ -337,10 +346,12 @@ def update_element(floor_id: str, element_id: str):
         return jsonify({"error": "Element not found"}), 404
 
     data = request.get_json(force=True)
-    
-    # Lista actualizada con 'rotation'
-    updatable = ["type", "label", "entity_id", "icon", "x", "y", "width", "height",
-                 "color_on", "color_off", "tap_action", "rotation"]   # ← AÑADIDO
+
+    updatable = [
+        "type", "label", "entity_id", "icon", "x", "y", "width", "height",
+        "color_on", "color_off", "tap_action", "rotation", "state_position",
+        "position", "service", "service_data",
+    ]
 
     for key in updatable:
         if key in data:
@@ -373,7 +384,7 @@ def delete_element(floor_id: str, element_id: str):
 
 @app.route("/api/ha/states", methods=["GET"])
 def ha_states():
-    if not SUPERVISOR_TOKEN:
+    if not HA_TOKEN:
         return jsonify([])
     try:
         resp = requests.get(f"{HA_BASE_URL}/states", headers=ha_headers(), timeout=10)
@@ -385,7 +396,7 @@ def ha_states():
 
 @app.route("/api/ha/states/<entity_id>", methods=["GET"])
 def ha_state(entity_id: str):
-    if not SUPERVISOR_TOKEN:
+    if not HA_TOKEN:
         return jsonify({"error": "No supervisor token"}), 503
     try:
         resp = requests.get(f"{HA_BASE_URL}/states/{entity_id}", headers=ha_headers(), timeout=10)
@@ -397,7 +408,7 @@ def ha_state(entity_id: str):
 
 @app.route("/api/ha/services/<domain>/<service>", methods=["POST"])
 def ha_call_service(domain: str, service: str):
-    if not SUPERVISOR_TOKEN:
+    if not HA_TOKEN:
         return jsonify({"error": "No supervisor token"}), 503
     try:
         data = request.get_json(force=True) or {}
@@ -502,4 +513,5 @@ def restore_config():
 
 if __name__ == "__main__":
     log.info("Starting HADomotics server on port 8099")
+    log.info("HA_BASE_URL=%s | token configured=%s", HA_BASE_URL, bool(HA_TOKEN))
     app.run(host="0.0.0.0", port=8099, debug=False)

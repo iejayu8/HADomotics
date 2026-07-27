@@ -38,7 +38,6 @@ body {
   overflow: hidden;
 }
 
-/* ── Header ── */
 .app-header {
   height: var(--header-h);
   background: var(--header-bg);
@@ -66,14 +65,12 @@ body {
   margin-left: 4px;
 }
 
-/* ── Layout ── */
 .app-layout {
   display: flex;
   flex: 1;
   overflow: hidden;
 }
 
-/* ── Sidebar ── */
 .sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
@@ -105,7 +102,6 @@ body {
   color: var(--text-secondary);
 }
 
-/* ── Editor area ── */
 .editor-area {
   flex: 1;
   display: flex;
@@ -160,12 +156,11 @@ body {
   display: block;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
+  overflow: visible;
   box-shadow: var(--shadow);
   background: #fff;
 }
 
-/* ── Element overlays ── */
 .element-overlay {
   position: absolute;
   border-radius: 6px;
@@ -173,14 +168,14 @@ body {
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   cursor: move;
   user-select: none;
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   padding: 4px;
   text-align: center;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .element-overlay.view-mode {
@@ -194,19 +189,62 @@ body {
 }
 
 .el-icon {
-  font-size: 24px;
-  transition: transform 0.2s ease;
+  font-size: 22px;
+  line-height: 1;
 }
 
 .el-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   line-height: 1.1;
-  transition: transform 0.2s ease;
-  max-width: 100%;
+  max-width: 95%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* State value outside the element box */
+.el-state {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.75);
+  padding: 2px 6px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.element-overlay.state-pos-bottom .el-state {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+}
+
+.element-overlay.state-pos-top .el-state {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 4px;
+}
+
+.element-overlay.state-pos-left .el-state {
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-right: 4px;
+}
+
+.element-overlay.state-pos-right .el-state {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 4px;
 }
 
 .resize-handle {
@@ -223,7 +261,6 @@ body {
   z-index: 20;
 }
 
-/* Properties Panel */
 .properties-panel {
   width: var(--props-w);
   background: var(--surface);
@@ -292,7 +329,6 @@ small {
   color: #666;
 }
 
-/* Form actions */
 .form-actions {
   margin-top: 12px;
   display: flex;
@@ -321,7 +357,6 @@ small {
   color: white;
 }
 
-/* Toast */
 .toast-container {
   position: fixed;
   bottom: 20px;
@@ -344,7 +379,6 @@ small {
   animation: toastIn 0.3s;
 }
 
-/* Modal */
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -363,39 +397,14 @@ small {
   box-shadow: var(--shadow);
 }
 
-/* Responsive adjustments */
 @media (max-width: 900px) {
   .properties-panel { width: 240px; }
-}
-
-.element-overlay {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 4px;
-  text-align: center;
-}
-
-.el-icon {
-  font-size: 24px;
-  line-height: 1;
-}
-
-.el-label {
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.1;
-  max-width: 90%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .canvas-wrapper {
   width: 100%;
   height: 100%;
-  overflow: hidden;          /* evita barras de scroll innecesarias */
+  overflow: hidden;
   display: flex;
   justify-content: flex-start;
   align-items: flex-start;
@@ -405,8 +414,9 @@ small {
 
 #canvasContainer {
   position: relative;
-  display: inline-block;     /* se adapta al tamaño real de la imagen */
+  display: inline-block;
   transform-origin: top left;
+  overflow: visible;
 }
 
 #floorImage {
