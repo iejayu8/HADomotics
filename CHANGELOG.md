@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.9.0
+
+### Added
+- **Auto-hide toolbar (View Mode)**  
+  The main HADomotics header is automatically hidden in View Mode to free screen space (ideal for wall displays / kiosk). It reappears when switching back to Edit Mode.
+
+- **Tap feedback**  
+  Interactive elements show a short visual feedback animation when tapped in View Mode.
+
+- **Live sensor / state values on the floor plan**  
+  Elements of type sensor, climate, indicator and cover display their live value (e.g. temperature, cover position %).  
+  - State text is rendered **outside** the element box.  
+  - Position is configurable in Edit Mode: top / bottom / left / right / hidden.  
+  - Values update with the existing state polling.
+
+### Changed
+- Element state styling improved for readability (badge outside the control).
+- Backend persists `state_position` (and related element fields) on update.
+- Local development: optional `HA_URL` + `HA_TOKEN` for Home Assistant API access outside the Supervisor.
+
 ## 1.8.0
 
 - Added canvas layout adjustments and automatic scaling for floor plans.
