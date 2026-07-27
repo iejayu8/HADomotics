@@ -562,6 +562,7 @@ async function handleElementTap(el, overlayEl) {
 
 function setViewMode(enabled) {
   viewMode = enabled;
+  document.body.classList.toggle("view-mode-active", enabled);
   const btn = $("btnToggleMode");
   const sidebar = $("sidebar");
   const toggleBtn = $("btnToggleSidebar");
