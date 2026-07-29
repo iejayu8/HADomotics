@@ -1,6 +1,6 @@
 HADomotics is a project structured into multiple components, including a backend module, a custom Lovelace card, and a test suite. This repository contains the source code, configuration files, and development assets for the project.
 
-Latest addon version: 1.9.0
+Latest addon version: 2.0.1
 
 **Repository Structure**
 

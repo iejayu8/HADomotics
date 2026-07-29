@@ -18,6 +18,7 @@ let resizeState = null;
 let viewMode = true;
 let entityStates = {};
 let statePollingTimer = null;
+let stateEventSource = null;
 
 // ---------------------------------------------------------------------------
 // Utility helpers
@@ -382,17 +383,6 @@ function _getElementBackground(el) {
   return el.color_off || "#9E9E9E";
 }
 
-async function fetchEntityStates() {
-  try {
-    const states = await apiFetch("/api/ha/states");
-    entityStates = {};
-    states.forEach((s) => { entityStates[s.entity_id] = s; });
-    updateElementStates();
-  } catch (err) {
-    console.debug("HADomotics: could not fetch HA states", err);
-  }
-}
-
 function updateElementStates() {
   if (!currentFloor || !$("canvasContainer")) return;
   (currentFloor.elements || []).forEach((el) => {
@@ -422,12 +412,57 @@ function updateElementStates() {
   });
 }
 
+async function fetchEntityStates() {
+  try {
+    const states = await apiFetch("/api/ha/states");
+    entityStates = {};
+    states.forEach((s) => { entityStates[s.entity_id] = s; });
+    updateElementStates();
+  } catch (err) {
+    console.debug("HADomotics: could not fetch HA states", err);
+  }
+}
+
 function startStatePolling() {
+  stopStatePolling();
+
+  // Snapshot inmediato
   fetchEntityStates();
-  statePollingTimer = setInterval(fetchEntityStates, 5000);
+
+  // Stream en tiempo real (SSE ← WebSocket HA en el backend)
+  try {
+    stateEventSource = new EventSource(`${API}/api/ha/stream`);
+    stateEventSource.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "states" && Array.isArray(msg.states)) {
+          entityStates = {};
+          msg.states.forEach((s) => { entityStates[s.entity_id] = s; });
+          updateElementStates();
+        } else if (msg.type === "state_changed" && msg.state) {
+          entityStates[msg.state.entity_id] = msg.state;
+          updateElementStates();
+        }
+      } catch (e) {
+        console.debug("HADomotics SSE parse error", e);
+      }
+    };
+    stateEventSource.onerror = () => {
+      // EventSource se reconecta solo; si falla mucho, fallback a polling
+      if (!statePollingTimer) {
+        statePollingTimer = setInterval(fetchEntityStates, 15000);
+      }
+    };
+  } catch (e) {
+    statePollingTimer = setInterval(fetchEntityStates, 5000);
+  }
 }
 
 function stopStatePolling() {
+  if (stateEventSource) {
+    stateEventSource.close();
+    stateEventSource = null;
+  }
   if (statePollingTimer) {
     clearInterval(statePollingTimer);
     statePollingTimer = null;
