@@ -23,6 +23,15 @@ let stateEventSource = null;
 // ---------------------------------------------------------------------------
 // Utility helpers
 // ---------------------------------------------------------------------------
+function setHaConnectionStatus(online) {
+  ["haConnIndicatorFixed", "haConnIndicatorHeader"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.classList.toggle("online", !!online);
+    el.classList.toggle("offline", !online);
+    el.title = online ? "HA connected" : "HA disconnected";
+  });
+}
 
 function $(id) { return document.getElementById(id); }
 
@@ -425,35 +434,37 @@ async function fetchEntityStates() {
 
 function startStatePolling() {
   stopStatePolling();
-
-  // Snapshot inmediato
   fetchEntityStates();
 
-  // Stream en tiempo real (SSE ← WebSocket HA en el backend)
   try {
     stateEventSource = new EventSource(`${API}/api/ha/stream`);
     stateEventSource.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "states" && Array.isArray(msg.states)) {
+        if (msg.type === "connected") {
+          setHaConnectionStatus(!!msg.ha_ws);
+        } else if (msg.type === "states" && Array.isArray(msg.states)) {
           entityStates = {};
           msg.states.forEach((s) => { entityStates[s.entity_id] = s; });
           updateElementStates();
+          setHaConnectionStatus(true);
         } else if (msg.type === "state_changed" && msg.state) {
           entityStates[msg.state.entity_id] = msg.state;
           updateElementStates();
+          setHaConnectionStatus(true);
         }
       } catch (e) {
         console.debug("HADomotics SSE parse error", e);
       }
     };
     stateEventSource.onerror = () => {
-      // EventSource se reconecta solo; si falla mucho, fallback a polling
+      setHaConnectionStatus(false);
       if (!statePollingTimer) {
         statePollingTimer = setInterval(fetchEntityStates, 15000);
       }
     };
   } catch (e) {
+    setHaConnectionStatus(false);
     statePollingTimer = setInterval(fetchEntityStates, 5000);
   }
 }
@@ -1024,6 +1035,51 @@ document.addEventListener("DOMContentLoaded", async () => {
   window.addEventListener("resize", () => {
     setTimeout(fitFloorPlan, 50);
   });
+
+    // Swipe vertical entre plantas (solo View Mode, zona central de la pantalla)
+  let swipeStartY = null;
+  let swipeStartX = null;
+  const SWIPE_MIN = 60;
+
+  function isCenterSwipeZone(clientX, clientY) {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    return clientX >= w * 0.2 && clientX <= w * 0.8 &&
+           clientY >= h * 0.2 && clientY <= h * 0.8;
+  }
+
+  function switchFloorByDelta(delta) {
+    if (!viewMode || !floors.length) return;
+    const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const idx = sorted.findIndex((f) => currentFloor && f.id === currentFloor.id);
+    if (idx < 0) return;
+    const next = idx + delta;
+    if (next < 0 || next >= sorted.length) return;
+    selectFloor(sorted[next].id);
+  }
+
+  const swipeTarget = $("canvasWrapper") || document.body;
+  swipeTarget.addEventListener("touchstart", (e) => {
+    if (!viewMode || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    if (!isCenterSwipeZone(t.clientX, t.clientY)) {
+      swipeStartY = null;
+      return;
+    }
+    swipeStartY = t.clientY;
+    swipeStartX = t.clientX;
+  }, { passive: true });
+
+  swipeTarget.addEventListener("touchend", (e) => {
+    if (!viewMode || swipeStartY == null) return;
+    const t = e.changedTouches[0];
+    const dy = t.clientY - swipeStartY;
+    const dx = Math.abs(t.clientX - swipeStartX);
+    swipeStartY = null;
+    if (Math.abs(dy) < SWIPE_MIN || Math.abs(dy) < dx) return;
+    // Arriba = siguiente planta; abajo = anterior
+    switchFloorByDelta(dy < 0 ? 1 : -1);
+  }, { passive: true });
 });
 
 // ---------------------------------------------------------------------------
