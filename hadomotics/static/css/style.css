@@ -36,6 +36,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  touch-action: manipulation;
 }
 
 .app-header {
@@ -76,7 +77,6 @@ body.view-mode-active .app-header {
   margin-left: 4px;
 }
 
-/* HA connection indicator (blinking green / red) */
 .ha-conn-indicator {
   width: 14px;
   height: 14px;
@@ -102,7 +102,6 @@ body.view-mode-active .app-header {
   50% { opacity: 0.45; transform: scale(0.85); }
 }
 
-/* Keep indicator visible even when header is hidden (fixed corner) */
 body.view-mode-active .ha-conn-indicator-fixed {
   display: block;
 }
@@ -194,15 +193,6 @@ body.view-mode-active .ha-conn-indicator-fixed {
 .toolbar-btn {
   border: 1px solid var(--border);
   color: var(--text-secondary);
-}
-
-.canvas-wrapper {
-  flex: 1;
-  overflow: auto;
-  padding: 24px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
 }
 
 .canvas-container {
@@ -456,7 +446,6 @@ small {
   box-shadow: var(--shadow);
 }
 
-/* Large touch-friendly cover position buttons */
 .quick-position-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -500,7 +489,8 @@ small {
   align-items: flex-start;
   padding: 12px;
   box-sizing: border-box;
-  touch-action: pan-y;
+  /* Do not use pan-y: it steals vertical swipes on touch displays */
+  touch-action: none;
 }
 
 #canvasContainer {
@@ -514,4 +504,5 @@ small {
   display: block;
   max-width: none;
   height: auto;
+  pointer-events: none;
 }
