@@ -4,15 +4,23 @@ import copy
 import json
 import logging
 import os
+import queue
+import threading
+import time
 import uuid
 from pathlib import Path
 
 import requests
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, Response, jsonify, request, send_file, send_from_directory, stream_with_context
 from flask_cors import CORS
 from PIL import Image
 import base64
 from datetime import datetime
+
+try:
+    from websocket import WebSocketApp
+except ImportError:  # pragma: no cover
+    WebSocketApp = None
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -43,12 +51,18 @@ HA_TOKEN = os.environ.get("HA_TOKEN", "") or SUPERVISOR_TOKEN
 HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 if HA_URL:
     HA_BASE_URL = f"{HA_URL}/api"
+    if HA_URL.startswith("https://"):
+        HA_WS_URL = "wss://" + HA_URL[len("https://"):] + "/api/websocket"
+    elif HA_URL.startswith("http://"):
+        HA_WS_URL = "ws://" + HA_URL[len("http://"):] + "/api/websocket"
+    else:
+        HA_WS_URL = f"ws://{HA_URL}/api/websocket"
 else:
     HA_BASE_URL = "http://supervisor/core/api"
+    HA_WS_URL = "ws://supervisor/core/websocket"
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
 
-# Maps user-supplied suffix → canonical server-controlled extension (breaks taint chain).
 _EXT_MAP: dict[str, str] = {
     ".jpg": ".jpg",
     ".jpeg": ".jpg",
@@ -58,12 +72,174 @@ _EXT_MAP: dict[str, str] = {
     ".svg": ".svg",
 }
 
-# Regex that matches only safe UUID-like floor IDs or the three built-in IDs
 import re as _re
 _SAFE_ID_RE = _re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 app = Flask(__name__, static_folder="static")
 CORS(app)
+
+# ---------------------------------------------------------------------------
+# HA WebSocket state cache + SSE clients
+# ---------------------------------------------------------------------------
+
+_state_cache: dict[str, dict] = {}
+_state_lock = threading.Lock()
+_sse_clients: list[queue.Queue] = []
+_sse_lock = threading.Lock()
+_ha_ws_connected = False
+_ha_ws_msg_id = 0
+_ha_ws_msg_lock = threading.Lock()
+
+
+def _next_msg_id() -> int:
+    global _ha_ws_msg_id
+    with _ha_ws_msg_lock:
+        _ha_ws_msg_id += 1
+        return _ha_ws_msg_id
+
+
+def _broadcast(msg: dict) -> None:
+    """Push a JSON-serializable message to all SSE clients."""
+    with _sse_lock:
+        dead: list[queue.Queue] = []
+        for q in _sse_clients:
+            try:
+                q.put_nowait(msg)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            if q in _sse_clients:
+                _sse_clients.remove(q)
+
+
+def _set_states_bulk(states: list) -> None:
+    with _state_lock:
+        _state_cache.clear()
+        for s in states:
+            eid = s.get("entity_id")
+            if eid:
+                _state_cache[eid] = s
+    _broadcast({"type": "states", "states": states})
+
+
+def _set_state_one(state_obj: dict) -> None:
+    eid = state_obj.get("entity_id")
+    if not eid:
+        return
+    with _state_lock:
+        _state_cache[eid] = state_obj
+    _broadcast({"type": "state_changed", "state": state_obj})
+
+
+def _ha_ws_on_message(ws, message: str) -> None:
+    global _ha_ws_connected
+    try:
+        data = json.loads(message)
+    except json.JSONDecodeError:
+        return
+
+    msg_type = data.get("type")
+
+    if msg_type == "auth_required":
+        ws.send(json.dumps({"type": "auth", "access_token": HA_TOKEN}))
+        return
+
+    if msg_type == "auth_ok":
+        _ha_ws_connected = True
+        log.info("HA WebSocket authenticated")
+        _broadcast({"type": "connected", "ha_ws": True})
+        # Subscribe to state changes
+        ws.send(json.dumps({
+            "id": _next_msg_id(),
+            "type": "subscribe_events",
+            "event_type": "state_changed",
+        }))
+        # Full snapshot
+        ws.send(json.dumps({
+            "id": _next_msg_id(),
+            "type": "get_states",
+        }))
+        return
+
+    if msg_type == "auth_invalid":
+        _ha_ws_connected = False
+        log.error("HA WebSocket auth invalid: %s", data.get("message"))
+        _broadcast({"type": "connected", "ha_ws": False, "error": "auth_invalid"})
+        return
+
+    if msg_type == "result":
+        if not data.get("success", True):
+            log.warning("HA WS result error: %s", data.get("error"))
+            return
+        result = data.get("result")
+        # get_states returns a list of state objects
+        if isinstance(result, list) and result and isinstance(result[0], dict) and "entity_id" in result[0]:
+            _set_states_bulk(result)
+            log.info("HA states snapshot loaded (%d entities)", len(result))
+        return
+
+    if msg_type == "event":
+        event = data.get("event") or {}
+        if event.get("event_type") == "state_changed":
+            new_state = (event.get("data") or {}).get("new_state")
+            if new_state:
+                _set_state_one(new_state)
+        return
+
+
+def _ha_ws_on_error(ws, error) -> None:
+    log.warning("HA WebSocket error: %s", error)
+
+
+def _ha_ws_on_close(ws, close_status_code, close_msg) -> None:
+    global _ha_ws_connected
+    _ha_ws_connected = False
+    log.info("HA WebSocket closed (%s %s)", close_status_code, close_msg)
+    _broadcast({"type": "connected", "ha_ws": False})
+
+
+def _ha_ws_on_open(ws) -> None:
+    log.info("HA WebSocket opened -> %s", HA_WS_URL)
+
+
+def _run_ha_websocket_once() -> None:
+    if WebSocketApp is None:
+        log.error("websocket-client not installed; cannot open HA WebSocket")
+        time.sleep(10)
+        return
+    if not HA_TOKEN:
+        log.debug("No HA token; skipping WebSocket connect")
+        time.sleep(5)
+        return
+
+    ws = WebSocketApp(
+        HA_WS_URL,
+        on_open=_ha_ws_on_open,
+        on_message=_ha_ws_on_message,
+        on_error=_ha_ws_on_error,
+        on_close=_ha_ws_on_close,
+    )
+    # Blocks until connection ends
+    ws.run_forever(ping_interval=30, ping_timeout=10)
+
+
+def _ha_ws_loop() -> None:
+    """Background reconnect loop for Home Assistant WebSocket."""
+    while True:
+        try:
+            _run_ha_websocket_once()
+        except Exception as exc:
+            log.warning("HA WebSocket loop error: %s", exp if (exp := exc) else exc)
+        global _ha_ws_connected
+        _ha_ws_connected = False
+        time.sleep(3)
+
+
+def _start_ha_ws_thread() -> None:
+    t = threading.Thread(target=_ha_ws_loop, name="ha-websocket", daemon=True)
+    t.start()
+    log.info("HA WebSocket thread started (url=%s)", HA_WS_URL)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -186,7 +362,6 @@ def delete_floor(floor_id: str):
     floor = get_floor(config, floor_id)
     if floor is None:
         return jsonify({"error": "Floor not found"}), 404
-    # Remove image file if present
     if floor.get("image"):
         img_path = IMAGES_DIR / floor["image"]
         img_path.unlink(missing_ok=True)
@@ -213,29 +388,22 @@ def upload_floor_image(floor_id: str):
         return jsonify({"error": "No image file provided"}), 400
 
     file = request.files["image"]
-    # Derive extension only from the suffix and look it up in our constant map.
-    # The value assigned to safe_ext comes from _EXT_MAP (a server constant), NOT from
-    # user input — this breaks the taint chain for path operations below.
     raw_suffix = Path(file.filename or "").suffix.lower()
     safe_ext = _EXT_MAP.get(raw_suffix)
     if safe_ext is None:
         return jsonify({"error": "File type not allowed"}), 400
 
-    # Generate a server-controlled filename: UUID hex + extension from our constant map.
     new_filename = uuid.uuid4().hex + safe_ext
 
-    # Remove old image
     old_image = floor.get("image")
     if old_image:
         old_path = _safe_path_within(IMAGES_DIR, old_image)
         if old_path is not None:
             old_path.unlink(missing_ok=True)
 
-    # Save to a server-generated path (not derived from user input)
     save_path = IMAGES_DIR / new_filename
     file.save(str(save_path))
 
-    # Verify it's a valid image (skip validation for SVG)
     if safe_ext != ".svg":
         try:
             with Image.open(save_path) as img:
@@ -257,7 +425,6 @@ def delete_floor_image(floor_id: str):
     if floor is None:
         return jsonify({"error": "Floor not found"}), 404
     if floor.get("image"):
-        # Use the value stored in config (server-controlled), not user input
         stored_name = floor["image"]
         img_path = _safe_path_within(IMAGES_DIR, stored_name)
         if img_path is not None:
@@ -269,22 +436,16 @@ def delete_floor_image(floor_id: str):
 
 @app.route("/api/images/<filename>")
 def serve_image(filename: str):
-    # Only serve images that are explicitly registered in our config (whitelist).
     config = load_config()
-    # Strip path components from the URL parameter – use only the plain filename.
     user_name = Path(filename).name
-    # Iterate the config registry and find the matching entry.
-    # `registered` is bound to a value FROM the config set (server-controlled),
-    # NOT from user input – this breaks the taint chain for path operations below.
     registered = None
     for stored in config.get("floors", []):
         img = stored.get("image")
         if img and img == user_name:
-            registered = img   # value is `img` from config, not `user_name`
+            registered = img
             break
     if registered is None:
         return jsonify({"error": "Image not found"}), 404
-    # Build path from config-controlled value
     path = _safe_path_within(IMAGES_DIR, registered)
     if path is None or not path.exists() or not path.is_file():
         return jsonify({"error": "Image not found"}), 404
@@ -378,24 +539,74 @@ def delete_element(floor_id: str, element_id: str):
 
 
 # ---------------------------------------------------------------------------
-# HA proxy (read entity states)
+# HA proxy (states via cache / REST + SSE stream)
 # ---------------------------------------------------------------------------
 
 
 @app.route("/api/ha/states", methods=["GET"])
 def ha_states():
+    # Prefer live cache from WebSocket
+    with _state_lock:
+        if _state_cache:
+            return jsonify(list(_state_cache.values()))
+
     if not HA_TOKEN:
         return jsonify([])
     try:
         resp = requests.get(f"{HA_BASE_URL}/states", headers=ha_headers(), timeout=10)
-        return jsonify(resp.json())
+        data = resp.json()
+        if isinstance(data, list):
+            _set_states_bulk(data)
+        return jsonify(data)
     except Exception as exc:
         log.warning("Could not fetch HA states: %s", exc)
         return jsonify([])
 
 
+@app.route("/api/ha/stream")
+def ha_stream():
+    """Server-Sent Events: real-time entity state updates from HA WebSocket."""
+
+    def event_stream():
+        q: queue.Queue = queue.Queue(maxsize=200)
+        with _sse_lock:
+            _sse_clients.append(q)
+        try:
+            yield f"data: {json.dumps({'type': 'connected', 'ha_ws': _ha_ws_connected})}\n\n"
+            with _state_lock:
+                snapshot = list(_state_cache.values())
+            if snapshot:
+                yield f"data: {json.dumps({'type': 'states', 'states': snapshot})}\n\n"
+            while True:
+                try:
+                    msg = q.get(timeout=25)
+                    yield f"data: {json.dumps(msg)}\n\n"
+                except queue.Empty:
+                    # keep-alive comment so proxies don't close the stream
+                    yield ": keepalive\n\n"
+        finally:
+            with _sse_lock:
+                if q in _sse_clients:
+                    _sse_clients.remove(q)
+
+    return Response(
+        stream_with_context(event_stream()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @app.route("/api/ha/states/<entity_id>", methods=["GET"])
 def ha_state(entity_id: str):
+    with _state_lock:
+        cached = _state_cache.get(entity_id)
+    if cached:
+        return jsonify(cached)
+
     if not HA_TOKEN:
         return jsonify({"error": "No supervisor token"}), 503
     try:
@@ -420,7 +631,7 @@ def ha_call_service(domain: str, service: str):
         )
         return jsonify(resp.json()), resp.status_code
     except Exception as exc:
-        log.warning("Could not call HA service %s.%s: %s", domain, service, exc)
+        log.warning("Could not call HA service %s.%s: %s", domain, service, exp if (exp := exc) else exc)
         return jsonify({"error": "Could not call Home Assistant service"}), 503
 
 
@@ -503,7 +714,7 @@ def restore_config():
                     f.write(img_bytes)
                 floor["image"] = new_filename
             except Exception as exc:
-                log.warning("Could not restore image: %s", exc)
+                log.warning("Could not restore image: %s", exp if (exp := exc) else exp)
 
         new_config["floors"].append(floor)
 
@@ -511,7 +722,10 @@ def restore_config():
     return jsonify({"ok": True, "message": "Configuration restored successfully"})
 
 
+# Start HA WebSocket listener as soon as the module loads (addon + local)
+_start_ha_ws_thread()
+
 if __name__ == "__main__":
     log.info("Starting HADomotics server on port 8099")
-    log.info("HA_BASE_URL=%s | token configured=%s", HA_BASE_URL, bool(HA_TOKEN))
-    app.run(host="0.0.0.0", port=8099, debug=False)
+    log.info("HA_BASE_URL=%s | HA_WS_URL=%s | token configured=%s", HA_BASE_URL, HA_WS_URL, bool(HA_TOKEN))
+    app.run(host="0.0.0.0", port=8099, debug=False, threaded=True)
