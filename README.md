@@ -7,6 +7,8 @@ Latest addon version: 3.0.1
 hadomotics/        # Core project module
 lovelace-card/     # Custom Lovelace card implementation
 tests/             # Test suite
+scripts/           # Versioning helpers (bump / check / changelog extract)
+.github/workflows/ # CI: version check + release automation
 .gitignore         # Git ignore rules
 CHANGELOG.md       # Version history
 repository.yaml    # Repository metadata
@@ -16,7 +18,6 @@ README.md          # Project documentation (this file)
 **Components**
 hadomotics/
 Contains the main logic or backend portion of the project.
-(Contents not visible in the tab, so this description is based solely on the folder name.)
 
 lovelace-card/
 Includes the custom Lovelace card implementation.
@@ -25,17 +26,37 @@ This likely provides UI elements or integrations for Home Assistant dashboards.
 tests/
 Holds automated tests for validating project functionality.
 
-CHANGELOG.md
-Tracks version changes and updates.
+**Versioning (CI/CD)**
 
-repository.yaml
-Metadata describing the repository configuration.
+Source of truth: `hadomotics/config.yaml` → `version`.
 
-server.log
-Log output from the project’s runtime environment.
+| File | Role |
+|------|------|
+| `hadomotics/config.yaml` | Addon version (Home Assistant Supervisor) |
+| `hadomotics/build.yaml` | `io.hass.version` label |
+| `README.md` | `Latest addon version` line |
+| `CHANGELOG.md` | Section `## X.Y.Z` |
+
+Local commands:
+
+```bash
+# Check all version files match
+python scripts/check_version.py
+
+# Bump and sync (patch / minor / major)
+python scripts/bump_version.py patch
+python scripts/bump_version.py minor --note "- New feature description"
+
+# Propagate current config.yaml version to the other files
+python scripts/bump_version.py --sync
+```
+
+GitHub Actions:
+- **Version check** — runs on every PR/push to `main`; fails if files disagree.
+- **Release** — when `config.yaml` version changes on `main`, creates tag `vX.Y.Z` + GitHub Release from CHANGELOG.
+- **Bump version** — manual workflow (Actions → Bump version) to bump patch/minor/major on `main`.
 
 **Development**
-To work with the repository:
 
 1. Clone the project
 2. Explore the module directories (hadomotics/, lovelace-card/)

@@ -1,0 +1,53 @@
+name: Bump version
+
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "Bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      note:
+        description: "Optional CHANGELOG one-liner"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    name: Bump and push version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version files
+        run: |
+          if [ -n "${{ inputs.note }}" ]; then
+            python3 scripts/bump_version.py "${{ inputs.kind }}" --note "- ${{ inputs.note }}"
+          else
+            python3 scripts/bump_version.py "${{ inputs.kind }}"
+          fi
+
+      - name: Verify consistency
+        run: python3 scripts/check_version.py
+
+      - name: Commit and push
+        run: |
+          VERSION=$(python3 -c "import re; t=open('hadomotics/config.yaml',encoding='utf-8').read(); print(re.search(r'^version:\s*[\"\']?([^\"\'\s]+)', t, re.M).group(1))")
+          git add hadomotics/config.yaml hadomotics/build.yaml README.md CHANGELOG.md
+          git commit -m "chore: bump version to ${VERSION}"
+          git push origin HEAD:main
