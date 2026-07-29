@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "hadomotics/config.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from config.yaml
+        id: ver
+        run: |
+          VERSION=$(python3 -c "import re; t=open('hadomotics/config.yaml',encoding='utf-8').read(); m=re.search(r'^version:\s*[\"\']?([^\"\'\s]+)', t, re.M); print(m.group(1) if m else '')")
+          if [ -z "$VERSION" ]; then
+            echo "Could not read version from config.yaml" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $VERSION"
+
+      - name: Check version consistency
+        run: python3 scripts/check_version.py
+
+      - name: Check if tag already exists
+        id: tagcheck
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already exists — skipping release"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG does not exist — will create release"
+          fi
+
+      - name: Build release notes from CHANGELOG
+        if: steps.tagcheck.outputs.exists == 'false'
+        run: |
+          python3 scripts/extract_changelog.py "${{ steps.ver.outputs.version }}" > /tmp/release_notes.md
+          cat /tmp/release_notes.md
+
+      - name: Create GitHub Release
+        if: steps.tagcheck.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: HADomotics ${{ steps.ver.outputs.version }}
+          body_file: /tmp/release_notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true
