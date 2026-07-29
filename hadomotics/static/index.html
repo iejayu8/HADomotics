@@ -47,14 +47,17 @@
   </style>
 </head>
 <body>
+  <!-- Fixed connection indicator (visible in View Mode when header is hidden) -->
+  <span id="haConnIndicatorFixed" class="ha-conn-indicator ha-conn-indicator-fixed offline" title="HA connection"></span>
+
   <header class="app-header">
     <span class="material-icons header-icon">floor_plan</span>
     <h1>HADomotics</h1>
     <span class="header-subtitle">Interactive Floor Plan</span>
+    <span id="haConnIndicatorHeader" class="ha-conn-indicator offline" title="HA connection"></span>
   </header>
 
   <main class="app-layout">
-    <!-- Sidebar -->
     <aside class="sidebar collapsed" id="sidebar">
       <section class="sidebar-section">
         <div class="section-header">
@@ -76,7 +79,6 @@
         <ul class="element-list" id="elementList"></ul>
       </section>
 
-      <!-- Backup section (solo en Edit Mode) -->
       <section class="sidebar-section backup-section" id="backupSection">
         <div class="section-header">
           <h2>Backup</h2>
@@ -93,7 +95,6 @@
       </section>
     </aside>
 
-    <!-- Editor -->
     <div class="editor-area">
       <div class="editor-toolbar" id="editorToolbar" style="display:none">
         <label class="toolbar-label edit-only" id="uploadImageLabel">
@@ -108,8 +109,7 @@
         <button class="toolbar-btn toolbar-mode-btn" id="btnToggleMode" title="Switch to View Mode">
           <span class="material-icons">visibility</span> View Mode
         </button>
-        <!-- NUEVO: Botones de floors (solo visibles en View Mode) -->
-        <div id="floorSwitcher" class="floor-switcher" style="display: none; margin-left: 12px; gap: 6px; display: none;"></div>
+        <div id="floorSwitcher" class="floor-switcher" style="display: none; margin-left: 12px; gap: 6px;"></div>
       </div>
 
       <div class="canvas-wrapper" id="canvasWrapper">
@@ -130,7 +130,6 @@
       </div>
     </div>
 
-    <!-- Properties Panel -->
     <aside class="properties-panel" id="propertiesPanel" style="display:none">
       <div class="panel-header">
         <h2 id="propPanelTitle">Element</h2>
@@ -256,7 +255,6 @@
     </aside>
   </main>
 
-  <!-- Quick Position Modal -->
   <div class="modal-overlay" id="quickPositionModal" style="display:none">
     <div class="modal">
       <h2 id="quickPositionTitle">Select Position</h2>
@@ -267,7 +265,6 @@
     </div>
   </div>
 
-  <!-- Add Floor Modal -->
   <div class="modal-overlay" id="addFloorModal" style="display:none">
     <div class="modal">
       <h2>Add Floor</h2>
