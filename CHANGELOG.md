@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.1
+
+### Added
+- **Real-time entity states via Home Assistant WebSocket**  
+  The backend maintains a persistent WebSocket connection to Home Assistant (`/api/websocket`), subscribes to `state_changed` events, and keeps an in-memory state cache.
+- **Server-Sent Events stream** (`GET /api/ha/stream`)  
+  The frontend receives live state updates over SSE instead of polling every 5 seconds. Entity colors and sensor values on the floor plan update immediately when HA state changes.
+- Fallback to REST polling if the SSE stream is unavailable.
+
+### Changed
+- `/api/ha/states` prefers the WebSocket-backed cache when available.
+- Local development continues to support `HA_URL` + `HA_TOKEN` for both REST and WebSocket.
+- Dependency: `websocket-client`.
+
 ## 1.9.0
 
 ### Added
