@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.1
+
+### Fixed
+- **Quick-position modal order**  
+  Cover position buttons are now ordered from **100% (top)** to **0% (bottom)** so the open position is first.
+- **Floor swipe on touch displays**  
+  Vertical swipe between floors now uses document-level touch/pointer listeners, a wider center zone, and `touch-action: none` on the canvas so gestures work reliably on wall panels (e.g. Shelly Display). Swipes no longer conflict with element taps.
+
 ## 3.0.0
 
 ### Added
