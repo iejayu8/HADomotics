@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.0
+
+### Added
+- **Large quick-position buttons**  
+  Cover / blind position selector (0%, 25%, 50%, 75%, 100%) uses large touch-friendly buttons for wall displays. Floor-plan element sizes are unchanged.
+- **HA connection indicator**  
+  Blinking round status light: green while the Home Assistant WebSocket/SSE link is active, red when disconnected. Visible in the header (Edit Mode) and fixed top-right corner in View Mode.
+- **Swipe between floors**  
+  In View Mode, vertical swipe (up = next floor, down = previous floor) from the **center** of the screen (not from the edges) switches floors.
+
 ## 2.0.1
 
 ### Added
