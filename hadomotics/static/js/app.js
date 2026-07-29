@@ -19,6 +19,7 @@ let viewMode = true;
 let entityStates = {};
 let statePollingTimer = null;
 let stateEventSource = null;
+let swipeTriggered = false;
 
 // ---------------------------------------------------------------------------
 // Utility helpers
@@ -492,7 +493,7 @@ function showQuickPositionModal(el) {
   title.textContent = `Select position for ${el.label || el.entity_id}`;
   grid.innerHTML = "";
 
-  const positions = [0, 25, 50, 75, 100];
+  const positions = [100, 75, 50, 25, 0];
 
   positions.forEach((pos) => {
     const btn = document.createElement("button");
@@ -1035,51 +1036,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   window.addEventListener("resize", () => {
     setTimeout(fitFloorPlan, 50);
   });
-
-    // Swipe vertical entre plantas (solo View Mode, zona central de la pantalla)
-  let swipeStartY = null;
-  let swipeStartX = null;
-  const SWIPE_MIN = 60;
-
-  function isCenterSwipeZone(clientX, clientY) {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    return clientX >= w * 0.2 && clientX <= w * 0.8 &&
-           clientY >= h * 0.2 && clientY <= h * 0.8;
-  }
-
-  function switchFloorByDelta(delta) {
-    if (!viewMode || !floors.length) return;
-    const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    const idx = sorted.findIndex((f) => currentFloor && f.id === currentFloor.id);
-    if (idx < 0) return;
-    const next = idx + delta;
-    if (next < 0 || next >= sorted.length) return;
-    selectFloor(sorted[next].id);
-  }
-
-  const swipeTarget = $("canvasWrapper") || document.body;
-  swipeTarget.addEventListener("touchstart", (e) => {
-    if (!viewMode || e.touches.length !== 1) return;
-    const t = e.touches[0];
-    if (!isCenterSwipeZone(t.clientX, t.clientY)) {
-      swipeStartY = null;
-      return;
-    }
-    swipeStartY = t.clientY;
-    swipeStartX = t.clientX;
-  }, { passive: true });
-
-  swipeTarget.addEventListener("touchend", (e) => {
-    if (!viewMode || swipeStartY == null) return;
-    const t = e.changedTouches[0];
-    const dy = t.clientY - swipeStartY;
-    const dx = Math.abs(t.clientX - swipeStartX);
-    swipeStartY = null;
-    if (Math.abs(dy) < SWIPE_MIN || Math.abs(dy) < dx) return;
-    // Arriba = siguiente planta; abajo = anterior
-    switchFloorByDelta(dy < 0 ? 1 : -1);
-  }, { passive: true });
 });
 
 // ---------------------------------------------------------------------------
