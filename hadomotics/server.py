@@ -43,11 +43,9 @@ def _resolve_paths() -> tuple:
 
 DATA_DIR, IMAGES_DIR, CONFIG_FILE = _resolve_paths()
 
-# Token: en el addon usa SUPERVISOR_TOKEN; en local puedes usar HA_TOKEN
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 HA_TOKEN = os.environ.get("HA_TOKEN", "") or SUPERVISOR_TOKEN
 
-# URL: en el addon usa supervisor; en local usa HA_URL (ej. http://192.168.1.131:8123)
 HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 if HA_URL:
     HA_BASE_URL = f"{HA_URL}/api"
@@ -84,7 +82,7 @@ CORS(app)
 
 _state_cache: dict[str, dict] = {}
 _state_lock = threading.Lock()
-_sse_clients: list[queue.Queue] = []
+_sse_clients: list = []
 _sse_lock = threading.Lock()
 _ha_ws_connected = False
 _ha_ws_msg_id = 0
@@ -99,9 +97,8 @@ def _next_msg_id() -> int:
 
 
 def _broadcast(msg: dict) -> None:
-    """Push a JSON-serializable message to all SSE clients."""
     with _sse_lock:
-        dead: list[queue.Queue] = []
+        dead = []
         for q in _sse_clients:
             try:
                 q.put_nowait(msg)
@@ -148,13 +145,11 @@ def _ha_ws_on_message(ws, message: str) -> None:
         _ha_ws_connected = True
         log.info("HA WebSocket authenticated")
         _broadcast({"type": "connected", "ha_ws": True})
-        # Subscribe to state changes
         ws.send(json.dumps({
             "id": _next_msg_id(),
             "type": "subscribe_events",
             "event_type": "state_changed",
         }))
-        # Full snapshot
         ws.send(json.dumps({
             "id": _next_msg_id(),
             "type": "get_states",
@@ -172,7 +167,6 @@ def _ha_ws_on_message(ws, message: str) -> None:
             log.warning("HA WS result error: %s", data.get("error"))
             return
         result = data.get("result")
-        # get_states returns a list of state objects
         if isinstance(result, list) and result and isinstance(result[0], dict) and "entity_id" in result[0]:
             _set_states_bulk(result)
             log.info("HA states snapshot loaded (%d entities)", len(result))
@@ -219,18 +213,16 @@ def _run_ha_websocket_once() -> None:
         on_error=_ha_ws_on_error,
         on_close=_ha_ws_on_close,
     )
-    # Blocks until connection ends
     ws.run_forever(ping_interval=30, ping_timeout=10)
 
 
 def _ha_ws_loop() -> None:
-    """Background reconnect loop for Home Assistant WebSocket."""
+    global _ha_ws_connected
     while True:
         try:
             _run_ha_websocket_once()
         except Exception as exc:
-            log.warning("HA WebSocket loop error: %s", exp if (exp := exc) else exc)
-        global _ha_ws_connected
+            log.warning("HA WebSocket loop error: %s", exc)
         _ha_ws_connected = False
         time.sleep(3)
 
@@ -241,12 +233,7 @@ def _start_ha_ws_thread() -> None:
     log.info("HA WebSocket thread started (url=%s)", HA_WS_URL)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _safe_path_within(base_dir: Path, filename: str) -> Path | None:
-    """Return a resolved path only if it is strictly inside base_dir, else None."""
+def _safe_path_within(base_dir: Path, filename: str):
     candidate = (base_dir / filename).resolve()
     try:
         candidate.relative_to(base_dir.resolve())
@@ -261,34 +248,26 @@ DEFAULT_FLOORS = [
 
 
 def load_config() -> dict:
-    """Load config from disk, initialising defaults if not present."""
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE) as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError) as exc:
-            log.warning("Could not read config file: %s – resetting to defaults", exc)
+            log.warning("Could not read config file: %s – resetting to defaults", exp if False else exc)
     return {"floors": copy.deepcopy(DEFAULT_FLOORS)}
 
 
 def save_config(config: dict) -> None:
-    """Persist config to disk."""
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 
 
-def get_floor(config: dict, floor_id: str) -> dict | None:
-    """Return a floor dict by id, or None."""
+def get_floor(config: dict, floor_id: str):
     return next((f for f in config["floors"] if f["id"] == floor_id), None)
 
 
 def ha_headers() -> dict:
     return {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
-
-
-# ---------------------------------------------------------------------------
-# Static / frontend routes
-# ---------------------------------------------------------------------------
 
 
 @app.route("/")
@@ -300,11 +279,6 @@ def index():
 @app.route("/static/<path:filename>")
 def serve_static(filename):
     return send_from_directory("static", filename)
-
-
-# ---------------------------------------------------------------------------
-# Floor API
-# ---------------------------------------------------------------------------
 
 
 @app.route("/api/floors", methods=["GET"])
@@ -368,11 +342,6 @@ def delete_floor(floor_id: str):
     config["floors"] = [f for f in config["floors"] if f["id"] != floor_id]
     save_config(config)
     return jsonify({"ok": True})
-
-
-# ---------------------------------------------------------------------------
-# Floor image API
-# ---------------------------------------------------------------------------
 
 
 @app.route("/api/floors/<floor_id>/image", methods=["POST"])
@@ -452,11 +421,6 @@ def serve_image(filename: str):
     return send_file(str(path))
 
 
-# ---------------------------------------------------------------------------
-# Elements API
-# ---------------------------------------------------------------------------
-
-
 @app.route("/api/floors/<floor_id>/elements", methods=["GET"])
 def list_elements(floor_id: str):
     config = load_config()
@@ -507,17 +471,14 @@ def update_element(floor_id: str, element_id: str):
         return jsonify({"error": "Element not found"}), 404
 
     data = request.get_json(force=True)
-
     updatable = [
         "type", "label", "entity_id", "icon", "x", "y", "width", "height",
         "color_on", "color_off", "tap_action", "rotation", "state_position",
         "position", "service", "service_data",
     ]
-
     for key in updatable:
         if key in data:
             elem[key] = data[key]
-
     save_config(config)
     return jsonify(elem)
 
@@ -533,19 +494,12 @@ def delete_element(floor_id: str, element_id: str):
     floor["elements"] = [e for e in floor.get("elements", []) if e["id"] != element_id]
     if len(floor["elements"]) == before:
         return jsonify({"error": "Element not found"}), 404
-
     save_config(config)
     return jsonify({"ok": True})
 
 
-# ---------------------------------------------------------------------------
-# HA proxy (states via cache / REST + SSE stream)
-# ---------------------------------------------------------------------------
-
-
 @app.route("/api/ha/states", methods=["GET"])
 def ha_states():
-    # Prefer live cache from WebSocket
     with _state_lock:
         if _state_cache:
             return jsonify(list(_state_cache.values()))
@@ -565,10 +519,8 @@ def ha_states():
 
 @app.route("/api/ha/stream")
 def ha_stream():
-    """Server-Sent Events: real-time entity state updates from HA WebSocket."""
-
     def event_stream():
-        q: queue.Queue = queue.Queue(maxsize=200)
+        q = queue.Queue(maxsize=200)
         with _sse_lock:
             _sse_clients.append(q)
         try:
@@ -582,7 +534,6 @@ def ha_stream():
                     msg = q.get(timeout=25)
                     yield f"data: {json.dumps(msg)}\n\n"
                 except queue.Empty:
-                    # keep-alive comment so proxies don't close the stream
                     yield ": keepalive\n\n"
         finally:
             with _sse_lock:
@@ -631,13 +582,8 @@ def ha_call_service(domain: str, service: str):
         )
         return jsonify(resp.json()), resp.status_code
     except Exception as exc:
-        log.warning("Could not call HA service %s.%s: %s", domain, service, exp if (exp := exc) else exc)
+        log.warning("Could not call HA service %s.%s: %s", domain, service, exc)
         return jsonify({"error": "Could not call Home Assistant service"}), 503
-
-
-# ---------------------------------------------------------------------------
-# Global config API
-# ---------------------------------------------------------------------------
 
 
 @app.route("/api/config", methods=["GET"])
@@ -646,13 +592,8 @@ def get_global_config():
     return jsonify({k: v for k, v in config.items() if k != "floors"})
 
 
-# ---------------------------------------------------------------------------
-# Backup / Restore
-# ---------------------------------------------------------------------------
-
 @app.route("/api/backup", methods=["GET"])
 def backup_config():
-    """Export full configuration including images as base64."""
     config = load_config()
     backup = {
         "version": "1.7.0",
@@ -688,7 +629,6 @@ def backup_config():
 
 @app.route("/api/restore", methods=["POST"])
 def restore_config():
-    """Restore configuration from backup JSON."""
     data = request.get_json(force=True)
 
     if not data or "floors" not in data:
@@ -714,7 +654,7 @@ def restore_config():
                     f.write(img_bytes)
                 floor["image"] = new_filename
             except Exception as exc:
-                log.warning("Could not restore image: %s", exp if (exp := exc) else exp)
+                log.warning("Could not restore image: %s", exc)
 
         new_config["floors"].append(floor)
 
@@ -722,7 +662,6 @@ def restore_config():
     return jsonify({"ok": True, "message": "Configuration restored successfully"})
 
 
-# Start HA WebSocket listener as soon as the module loads (addon + local)
 _start_ha_ws_thread()
 
 if __name__ == "__main__":
