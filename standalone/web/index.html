@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="HADomotics" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1565C0" />
+  <title>HADomotics – Tuya</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+  <style>
+    .sidebar {
+      transition: width 0.3s ease, padding 0.3s ease;
+      overflow: hidden;
+    }
+    .sidebar.collapsed {
+      width: 0 !important;
+      padding: 0 !important;
+      border-right: none;
+    }
+    .floor-switcher {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .floor-switcher .floor-btn {
+      padding: 4px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color, #444);
+      background: var(--surface, #2a2a2a);
+      color: var(--text, #eee);
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.15s ease;
+    }
+
+    .floor-switcher .floor-btn:hover {
+      background: var(--primary, #4CAF50);
+      border-color: var(--primary, #4CAF50);
+      color: white;
+    }
+
+    .floor-switcher .floor-btn.active {
+      background: var(--primary, #4CAF50);
+      border-color: var(--primary, #4CAF50);
+      color: white;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <!-- Fixed connection indicator (visible in View Mode when header is hidden) -->
+  <span id="haConnIndicatorFixed" class="ha-conn-indicator ha-conn-indicator-fixed offline" title="HA connection"></span>
+
+  <header class="app-header">
+    <span class="material-icons header-icon">floor_plan</span>
+    <h1>HADomotics</h1>
+    <span class="header-subtitle">Tuya · sin Home Assistant</span>
+    <span id="haConnIndicatorHeader" class="ha-conn-indicator offline" title="HA connection"></span>
+  </header>
+
+  <main class="app-layout">
+    <aside class="sidebar collapsed" id="sidebar">
+      <section class="sidebar-section">
+        <div class="section-header">
+          <h2>Floors</h2>
+          <button class="icon-btn" id="btnAddFloor" title="Add floor">
+            <span class="material-icons">add</span>
+          </button>
+        </div>
+        <ul class="floor-list" id="floorList"></ul>
+      </section>
+
+      <section class="sidebar-section element-section" id="elementSection" style="display:none">
+        <div class="section-header">
+          <h2>Elements</h2>
+          <button class="icon-btn" id="btnAddElement" title="Add element">
+            <span class="material-icons">add</span>
+          </button>
+        </div>
+        <ul class="element-list" id="elementList"></ul>
+      </section>
+
+      <section class="sidebar-section backup-section" id="backupSection">
+        <div class="section-header">
+          <h2>Tuya</h2>
+        </div>
+        <div class="backup-buttons" style="flex-direction:column;align-items:stretch;gap:8px;padding:0 16px 8px">
+          <button class="btn btn-secondary" id="btnOpenTuyaSettings" type="button">
+            <span class="material-icons">cloud</span> Conectar Tuya
+          </button>
+          <button class="btn btn-secondary" id="btnSyncTuya" type="button">
+            <span class="material-icons">sync</span> Sincronizar dispositivos
+          </button>
+          <small id="tuyaStatusHint" style="color:var(--text-secondary)">Modo demo</small>
+        </div>
+        <div class="section-header">
+          <h2>Backup</h2>
+        </div>
+        <div class="backup-buttons">
+          <button class="btn btn-secondary" id="btnExportConfig">
+            <span class="material-icons">download</span> Export
+          </button>
+          <button class="btn btn-secondary" id="btnImportConfig">
+            <span class="material-icons">upload</span> Import
+          </button>
+          <input type="file" id="importFileInput" accept=".json" style="display:none" />
+        </div>
+      </section>
+    </aside>
+
+    <div class="editor-area">
+      <div class="editor-toolbar" id="editorToolbar" style="display:none">
+        <label class="toolbar-label edit-only" id="uploadImageLabel">
+          <span class="material-icons">upload_file</span> Upload Floor Plan
+          <input type="file" id="imageUpload" accept="image/*" style="display:none" />
+        </label>
+        <button class="toolbar-btn edit-only" id="btnDeleteImage" title="Remove image">
+          <span class="material-icons">delete</span> Remove Image
+        </button>
+        <span class="spacer"></span>
+        <span class="toolbar-hint edit-only" id="toolbarHint">Click on the image to place an element</span>
+        <button class="toolbar-btn toolbar-mode-btn" id="btnToggleMode" title="Switch to View Mode">
+          <span class="material-icons">visibility</span> View Mode
+        </button>
+        <div id="floorSwitcher" class="floor-switcher" style="display: none; margin-left: 12px; gap: 6px;"></div>
+      </div>
+
+      <div class="canvas-wrapper" id="canvasWrapper">
+        <div class="empty-state" id="emptyState">
+          <span class="material-icons empty-icon">house</span>
+          <p>Select or create a floor to get started</p>
+        </div>
+        <div class="floor-canvas" id="floorCanvas" style="display:none">
+          <div class="image-placeholder" id="imagePlaceholder" style="display:none">
+            <span class="material-icons">add_photo_alternate</span>
+            <p>No floor plan image yet</p>
+            <button class="btn btn-primary" id="btnUploadFromPlaceholder">Upload Image</button>
+          </div>
+          <div class="canvas-container" id="canvasContainer" style="display:none; position:relative;">
+            <img id="floorImage" alt="Floor Plan" style="display:block;" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="properties-panel" id="propertiesPanel" style="display:none">
+      <div class="panel-header">
+        <h2 id="propPanelTitle">Element</h2>
+        <button class="icon-btn" id="btnCloseProps">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <form id="elementForm" class="element-form" autocomplete="off">
+        <input type="hidden" id="propElementId" />
+
+        <div class="form-group">
+          <label for="propLabel">Label</label>
+          <input type="text" id="propLabel" placeholder="Living Room Light" />
+        </div>
+
+        <div class="form-group">
+          <label for="propRotation">Rotación (°)</label>
+          <input type="number" id="propRotation" min="-180" max="180" step="5" value="0" />
+          <small>-180 a 180 grados</small>
+        </div>
+
+        <div class="form-group">
+          <label for="propType">Type</label>
+          <select id="propType">
+            <option value="button">Button / Switch</option>
+            <option value="light">Light</option>
+            <option value="sensor">Sensor</option>
+            <option value="indicator">Indicator</option>
+            <option value="climate">Climate</option>
+            <option value="cover">Cover / Blind</option>
+            <option value="camera">Camera</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="propEntityId">Dispositivo Tuya</label>
+          <input type="text" id="propEntityId" placeholder="tuya.deviceId.switch_1" list="tuyaEntityList" />
+          <datalist id="tuyaEntityList"></datalist>
+          <small>Formato: tuya.<id>.<código DP></small>
+        </div>
+
+        <div class="form-group">
+          <label for="propIcon">Icon (MDI name)</label>
+          <input type="text" id="propIcon" placeholder="lightbulb" />
+        </div>
+
+        <div class="form-group form-group-row">
+          <div>
+            <label for="propColorOn">Color On</label>
+            <input type="color" id="propColorOn" value="#4CAF50" />
+          </div>
+          <div>
+            <label for="propColorOff">Color Off</label>
+            <input type="color" id="propColorOff" value="#9E9E9E" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="propTapAction">Tap Action</label>
+          <select id="propTapAction">
+            <option value="toggle">Toggle</option>
+            <option value="more-info">More Info</option>
+            <option value="navigate">Navigate</option>
+            <option value="set_position">Set Position (cover)</option>
+            <option value="quick-position">Quick Position Selector</option>
+            <option value="call-service">Llamar servicio personalizado</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="positionGroup" style="display: none;">
+          <label for="propPosition">Position (0-100)</label>
+          <input type="number" id="propPosition" min="0" max="100" step="1" value="50" />
+          <small>Porcentaje de apertura de la persiana</small>
+        </div>
+
+        <div class="form-group" id="serviceGroup" style="display: none;">
+          <label for="propService">Service (domain.service)</label>
+          <input type="text" id="propService" placeholder="cover.set_cover_position" />
+          <small>Ej: cover.set_cover_position, light.turn_on</small>
+        </div>
+
+        <div class="form-group" id="serviceDataGroup" style="display: none;">
+          <label for="propServiceData">Service Data (JSON)</label>
+          <textarea id="propServiceData" rows="3" placeholder='{"position": 75}'></textarea>
+          <small>entity_id se añade automáticamente.</small>
+        </div>
+
+        <div class="form-group form-group-row">
+          <div>
+            <label for="propWidth">Width (px)</label>
+            <input type="number" id="propWidth" min="20" max="400" value="60" />
+          </div>
+          <div>
+            <label for="propHeight">Height (px)</label>
+            <input type="number" id="propHeight" min="20" max="400" value="30" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="propStatePosition">Posición del estado</label>
+          <select id="propStatePosition">
+            <option value="bottom">Abajo</option>
+            <option value="top">Arriba</option>
+            <option value="left">Izquierda</option>
+            <option value="right">Derecha</option>
+            <option value="none">Oculto</option>
+          </select>
+          <small>Dónde mostrar el valor (sensor, %, temperatura…)</small>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">
+            <span class="material-icons">save</span> Save
+          </button>
+          <button type="button" class="btn btn-secondary" id="btnDuplicateElement">
+            <span class="material-icons">content_copy</span> Duplicate
+          </button>
+          <button type="button" class="btn btn-danger" id="btnDeleteElement">
+            <span class="material-icons">delete</span> Delete
+          </button>
+        </div>
+      </form>
+    </aside>
+  </main>
+
+  <div class="modal-overlay" id="quickPositionModal" style="display:none">
+    <div class="modal">
+      <h2 id="quickPositionTitle">Select Position</h2>
+      <div class="quick-position-grid" id="quickPositionGrid"></div>
+      <div class="modal-actions">
+        <button class="btn" id="btnCancelQuickPosition">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="addFloorModal" style="display:none">
+    <div class="modal">
+      <h2>Add Floor</h2>
+      <div class="form-group">
+        <label for="newFloorName">Floor Name</label>
+        <input type="text" id="newFloorName" placeholder="e.g. Basement" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="btnConfirmAddFloor">Add</button>
+        <button class="btn" id="btnCancelAddFloor">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="tuyaSettingsModal" style="display:none">
+    <div class="modal" style="width:min(480px,94vw)">
+      <h2>Conexión Tuya</h2>
+      <p style="font-size:.85rem;color:var(--text-secondary);margin:0 0 12px">
+        Crea un proyecto Cloud en iot.tuya.com, vincula la cuenta Smart Life / Tuya
+        y pega las claves. En la misma Wi‑Fi se usará control local si es posible.
+      </p>
+      <div class="form-group">
+        <label for="tuyaAccessId">Access ID</label>
+        <input type="text" id="tuyaAccessId" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label for="tuyaAccessSecret">Access Secret</label>
+        <input type="password" id="tuyaAccessSecret" placeholder="se conserva si lo dejas vacío" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label for="tuyaUid">UID cuenta Tuya (opcional)</label>
+        <input type="text" id="tuyaUid" placeholder="uid del app account linked" />
+      </div>
+      <div class="form-group">
+        <label for="tuyaRegion">Región</label>
+        <select id="tuyaRegion">
+          <option value="eu">Europa (eu)</option>
+          <option value="us">América (us)</option>
+          <option value="cn">China (cn)</option>
+          <option value="in">India (in)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="tuyaPreferLocal" checked />
+          Preferir LAN si estamos en la misma Wi‑Fi
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="btnSaveTuyaSettings" type="button">Guardar y conectar</button>
+        <button class="btn" id="btnCancelTuyaSettings" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="js/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  </script>
+</body>
+</html>

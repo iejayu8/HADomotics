@@ -1,0 +1,27 @@
+name: Standalone install packages
+
+on:
+  push:
+    branches: [pilot/tuya-standalone]
+    paths:
+      - "standalone/**"
+  workflow_dispatch:
+
+jobs:
+  zip-packages:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Android / iOS install zips
+        run: |
+          mkdir -p dist
+          (cd standalone/web && zip -r ../../dist/HADomotics-Android-PWA.zip . -x "*.map")
+          (cd standalone/web && zip -r ../../dist/HADomotics-iOS-PWA.zip . -x "*.map")
+          cp standalone/README.md dist/LEEME.txt
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hadomotics-standalone-install
+          path: dist/
