@@ -12,6 +12,55 @@
     tuya: {},
   };
   const sseClients = [];
+  const blobUrls = {};
+
+  function objectUrlFor(name) {
+    if (!name) return "";
+    if (blobUrls[name]) return blobUrls[name];
+    const dataUrl = cache.images[name];
+    if (!dataUrl || typeof dataUrl !== "string") return "";
+    const parts = dataUrl.split(",");
+    const b64 = parts[1];
+    if (!b64) return dataUrl;
+    try {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const mimeMatch = (parts[0] || "").match(/data:([^;]+)/);
+      const mime = (mimeMatch && mimeMatch[1]) || "image/png";
+      blobUrls[name] = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      return blobUrls[name];
+    } catch (_) {
+      return dataUrl;
+    }
+  }
+
+  window.HADomoticsImageUrl = function (name) {
+    return objectUrlFor(name);
+  };
+
+  (function patchImageSrc() {
+    const desc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+    if (!desc || !desc.set) return;
+    Object.defineProperty(HTMLImageElement.prototype, "src", {
+      configurable: true,
+      enumerable: true,
+      get() { return desc.get.call(this); },
+      set(val) {
+        const s = String(val || "");
+        if (s.indexOf("/api/images/") >= 0) {
+          const raw = s.split("/api/images/")[1] || "";
+          const name = decodeURIComponent(raw.split("?")[0]);
+          const local = objectUrlFor(name);
+          if (local) {
+            desc.set.call(this, local);
+            return;
+          }
+        }
+        desc.set.call(this, val);
+      },
+    });
+  })();
 
   function uuid() {
     return crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(16).slice(2);
@@ -161,6 +210,14 @@
           const fd = opts.body;
           const file = fd && fd.get && fd.get("image");
           if (!file) return jsonRes({ error: "No image" }, 400);
+          const mime = file.type || "";
+          if (mime && !/^image\/(jpeg|jpg|png|webp|gif|bmp)/i.test(mime)) {
+            return jsonRes({ error: "Usa JPG, PNG o WebP (el formato de la foto no es compatible)" }, 400);
+          }
+          if (floor.image && blobUrls[floor.image]) {
+            try { URL.revokeObjectURL(blobUrls[floor.image]); } catch (_) {}
+            delete blobUrls[floor.image];
+          }
           const dataUrl = await new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result);

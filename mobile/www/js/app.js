@@ -334,9 +334,18 @@ function renderFloorCanvas(floor) {
   } else {
     hide(ep);
     show(cc, "inline-block");
-    img.src = `${API}/api/images/${floor.image}?t=${Date.now()}`;
-    img.onload = () => renderElements(floor.elements || []);
-    setTimeout(fitFloorPlan, 50);
+    const localUrl = window.HADomoticsImageUrl ? window.HADomoticsImageUrl(floor.image) : "";
+    img.removeAttribute("src");
+    img.onload = () => {
+      renderElements(floor.elements || []);
+      setTimeout(fitFloorPlan, 30);
+    };
+    img.onerror = () => {
+      toast("No se pudo mostrar el plano", "error");
+      show(ep, "flex");
+      hide(cc);
+    };
+    img.src = localUrl || `${API}/api/images/${floor.image}?t=${Date.now()}`;
   }
 }
 
