@@ -1,0 +1,13 @@
+{
+  "appId": "com.hadomotics.tuya",
+  "appName": "HADomotics",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

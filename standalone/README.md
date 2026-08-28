@@ -4,6 +4,9 @@ Control de planos y dispositivos **Tuya / Smart Life** en tablet o móvil **sin 
 
 Rama de prueba: `pilot/tuya-standalone`. No mergear a `main` hasta validar.
 
+**¿Sin PC en casa?** App nativa Android/iOS en la rama [`pilot/tuya-mobile`](../mobile/README.md) (`mobile/`).
+
+
 ## Cómo se instala en el móvil (piloto)
 
 No hay IPA/APK de tienda: Apple no deja instalar un `.ipa` desde GitHub, y un APK no firmado de Play es frágil. El piloto es una **PWA** (app instalable) servida por un mini servidor en tu red.
