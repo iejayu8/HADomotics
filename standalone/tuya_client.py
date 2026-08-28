@@ -7,8 +7,10 @@ then we fall back to Cloud.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
+import unicodedata
 from typing import Any, Optional
 
 log = logging.getLogger("hadomotics.tuya")
@@ -27,6 +29,25 @@ _COVER_CODES = ("percent_control", "percent_state", "position", "curtain_percent
 _TEMP_CODES = ("temp_current", "current_temperature", "va_temperature")
 _SETPOINT_CODES = ("temp_set", "temperature", "set_temp")
 _BRIGHT_CODES = ("bright_value", "bright_value_v2", "brightness")
+
+
+def _norm(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode("ascii")
+    s = s.lower()
+    return re.sub(r"[^a-z0-9]+", "_", s).strip("_")
+
+
+def _tuya_err(obj: Any) -> str:
+    if not isinstance(obj, dict):
+        return ""
+    if obj.get("success") is False:
+        return str(obj.get("msg") or obj.get("Payload") or obj.get("error") or obj)
+    if "Err" in obj or "Error" in obj:
+        return str(obj.get("Payload") or obj.get("Error") or obj)
+    code = obj.get("code")
+    if code not in (None, 0, 200, "0", "200") and obj.get("success") is False:
+        return str(obj.get("msg") or obj)
+    return ""
 
 
 class TuyaAdapter:
@@ -158,21 +179,22 @@ class TuyaAdapter:
         if tinytuya is None:
             return "tinytuya no está instalado"
         try:
+            # apiDeviceID must be a Device ID, never a user UID (that yielded 0 devices).
             cloud = tinytuya.Cloud(
                 apiRegion=self.region,
                 apiKey=self.access_id,
                 apiSecret=self.access_secret,
-                apiDeviceID=self.uid or "dummy",
             )
-            # Tiny ping: list devices
-            res = cloud.getdevices()
-            if isinstance(res, dict) and res.get("success") is False:
-                return str(res.get("msg") or res.get("error") or "Cloud auth failed")
+            cloud.use_old_device_list = False
+            if getattr(cloud, "error", None):
+                return _tuya_err(cloud.error) or str(cloud.error)
+            if not getattr(cloud, "token", None):
+                return "No se pudo obtener token Tuya (Access ID/Secret o región incorrectos)"
             with self._lock:
                 self._cloud_api = cloud
                 self.connected = True
                 self.last_error = ""
-            log.info("Tuya Cloud connected (region=%s)", self.region)
+            log.info("Tuya Cloud token OK (region=%s host=%s)", self.region, getattr(cloud, "urlhost", ""))
             return ""
         except Exception as exc:
             log.warning("Tuya Cloud connect failed: %s", exc)
@@ -195,8 +217,15 @@ class TuyaAdapter:
                 return self.list_devices()
             cloud = self._get_cloud()
         try:
-            raw = cloud.getdevices()
-            devices_in = raw if isinstance(raw, list) else (raw.get("result") or raw.get("devices") or [])
+            devices_in, fetch_err = self._fetch_raw_devices(cloud)
+            if fetch_err and not devices_in:
+                log.warning("Tuya list empty: %s", fetch_err)
+                with self._lock:
+                    self._devices = {}
+                    self._last_sync = time.time()
+                    self.connected = True
+                    self.last_error = fetch_err
+                return self.list_devices()
             new_map: dict[str, dict] = {}
             for d in devices_in:
                 if not isinstance(d, dict):
@@ -228,7 +257,8 @@ class TuyaAdapter:
                 self._devices = new_map
                 self._last_sync = time.time()
                 self.connected = True
-                self.last_error = ""
+                self.last_error = "" if new_map else (fetch_err or "0 dispositivos. Vincula la cuenta Smart Life al proyecto Cloud y revisa la región.")
+            log.info("Tuya sync: %d devices", len(new_map))
             # optional LAN scan to fill IPs
             if self.prefer_local:
                 self._scan_lan_ips()
@@ -238,6 +268,126 @@ class TuyaAdapter:
                 self.last_error = str(exc)
                 self.connected = False
         return self.list_devices()
+
+    def _extract_device_dicts(self, raw: Any) -> tuple[list[dict], str]:
+        err = _tuya_err(raw)
+        if err:
+            return [], err
+        if isinstance(raw, list):
+            return [x for x in raw if isinstance(x, dict)], ""
+        if not isinstance(raw, dict):
+            return [], f"respuesta inesperada: {type(raw).__name__}"
+        result = raw.get("result")
+        if isinstance(result, list):
+            return [x for x in result if isinstance(x, dict)], ""
+        if isinstance(result, dict):
+            for key in ("devices", "list"):
+                val = result.get(key)
+                if isinstance(val, list):
+                    return [x for x in val if isinstance(x, dict)], ""
+        if isinstance(raw.get("devices"), list):
+            return [x for x in raw["devices"] if isinstance(x, dict)], ""
+        return [], ""
+
+    def _fetch_raw_devices(self, cloud) -> tuple[list[dict], str]:
+        last_err = "Tuya devolvió 0 dispositivos"
+        # 1) All devices linked to the Cloud project
+        try:
+            cloud.use_old_device_list = False
+            raw = cloud.getdevices(verbose=True)
+            log.info("Tuya getdevices(verbose): %s", str(raw)[:800])
+            devs, err = self._extract_device_dicts(raw)
+            if devs:
+                return devs, ""
+            last_err = err or last_err
+        except Exception as exc:
+            last_err = str(exc)
+            log.warning("getdevices verbose failed: %s", exc)
+
+        try:
+            cloud.use_old_device_list = False
+            raw = cloud.getdevices()
+            log.info("Tuya getdevices(): %s", str(raw)[:800])
+            devs, err = self._extract_device_dicts(raw)
+            if devs:
+                return devs, ""
+            last_err = err or last_err
+        except Exception as exc:
+            last_err = str(exc)
+
+        uid = self.uid
+        if uid:
+            for label, raw in (
+                ("users/uid/devices", None),
+                ("iot-03 by uid", None),
+            ):
+                try:
+                    if label.startswith("users"):
+                        raw = cloud.cloudrequest("users/%s/devices" % uid)
+                    else:
+                        raw = cloud._get_all_devices(uid=uid)
+                    log.info("Tuya %s: %s", label, str(raw)[:800])
+                    devs, err = self._extract_device_dicts(raw)
+                    if devs:
+                        return devs, ""
+                    last_err = err or last_err
+                except Exception as exc:
+                    last_err = str(exc)
+                    log.warning("%s failed: %s", label, exc)
+
+        hint = (
+            f"{last_err}. "
+            "Comprueba: 1) Data Center del proyecto Cloud = región (España suele ser eu o eu-w), "
+            "2) Cloud → proyecto → Devices / Link Tuya App Account (cuenta Smart Life), "
+            "3) el UID es el de esa cuenta vinculada, no un entity_id de Home Assistant."
+        )
+        return [], hint
+
+    def resolve_entity(self, entity_id: str, domain_hint: str = "") -> tuple[str, Optional[str]]:
+        """Map tuya.<id>.<code> or leftover HA entity_ids (cover.foo) to a Tuya device."""
+        eid = (entity_id or "").strip()
+        if not eid:
+            raise ValueError("Sin entity_id en el elemento")
+        parts = eid.split(".")
+        if parts[0] == "tuya" and len(parts) >= 2:
+            return parts[1], parts[2] if len(parts) > 2 else None
+        with self._lock:
+            if eid in self._devices:
+                return eid, None
+        if not self.demo:
+            self.sync_devices()
+        slug = parts[-1]
+        nslug = _norm(slug)
+        domain = parts[0] if len(parts) > 1 else domain_hint
+        with self._lock:
+            devices = list(self._devices.values())
+        for d in devices:
+            nd = _norm(d.get("name") or "")
+            nid = _norm(d.get("id") or "")
+            if nslug in (nid, nd) or (nslug and nd and (nslug in nd or nd in nslug)):
+                return d["id"], self._infer_code(d, domain)
+        names = ", ".join((d.get("name") or d["id"]) for d in devices[:15]) or "(ningún dispositivo Tuya)"
+        raise ValueError(
+            f"No hay dispositivo Tuya para '{eid}'. Sincronizados: {names}. "
+            "En Edit Mode asigna entity_id = tuya.<deviceId>.<codigo>"
+        )
+
+    @staticmethod
+    def _infer_code(device: dict, domain: str) -> Optional[str]:
+        status = device.get("status") or {}
+        codes = device.get("codes") or list(status.keys())
+        if domain in ("cover", "curtain"):
+            for c in _COVER_CODES:
+                if c in codes or c in status:
+                    return c
+        if domain in ("light", "switch", "button"):
+            for c in _SWITCH_CODES:
+                if c in codes or c in status:
+                    return c
+        for c in _SWITCH_CODES:
+            if c in status or c in codes:
+                return c
+        return codes[0] if codes else None
 
     def _scan_lan_ips(self) -> None:
         if tinytuya is None:

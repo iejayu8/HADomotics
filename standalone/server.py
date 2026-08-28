@@ -425,14 +425,8 @@ def ha_stream():
     )
 
 
-def _parse_tuya_entity(entity_id: str) -> tuple[str, str | None]:
-    """tuya.<deviceId> or tuya.<deviceId>.<code>"""
-    parts = (entity_id or "").split(".")
-    if len(parts) >= 2 and parts[0] == "tuya":
-        device_id = parts[1]
-        code = parts[2] if len(parts) > 2 else None
-        return device_id, code
-    return entity_id, None
+def _parse_tuya_entity(entity_id: str, domain: str = "") -> tuple[str, str | None]:
+    return adapter.resolve_entity(entity_id, domain)
 
 
 @app.route("/api/ha/services/<domain>/<service>", methods=["POST"])
@@ -440,7 +434,7 @@ def _parse_tuya_entity(entity_id: str) -> tuple[str, str | None]:
 def ha_call_service(domain: str, service: str):
     data = request.get_json(force=True) or {}
     entity_id = data.get("entity_id") or ""
-    device_id, code = _parse_tuya_entity(entity_id)
+    device_id, code = _parse_tuya_entity(entity_id, domain)
     try:
         if service in ("set_cover_position", "set_position") or domain == "cover" and "position" in data:
             pos = int(data.get("position", 50))

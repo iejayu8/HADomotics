@@ -107,8 +107,8 @@ async function loadTuyaSettingsForm() {
     const hint = $("tuyaStatusHint");
     if (hint) {
       if (cfg.demo) hint.textContent = "Modo demo (sin claves Tuya)";
-      else if (cfg.connected) hint.textContent = `Tuya OK · ${cfg.device_count || 0} dispositivos`;
-      else hint.textContent = cfg.last_error || "Tuya desconectado";
+      else if (cfg.connected && (cfg.device_count || 0) > 0) hint.textContent = `Tuya OK · ${cfg.device_count} dispositivos`;
+      else hint.textContent = cfg.last_error || "0 dispositivos — revisa región / cuenta vinculada";
     }
     setHaConnectionStatus(!!cfg.connected);
   } catch (e) {
