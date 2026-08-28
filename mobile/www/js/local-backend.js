@@ -6,7 +6,11 @@
   const NativeES = window.EventSource;
   const DB_NAME = "hadomotics-mobile";
   let dbPromise = null;
-  let cache = { floors: [], images: {}, tuya: {} };
+  let cache = {
+    floors: [{ id: "floor1", name: "Floor 1", order: 0, elements: [], image: null }],
+    images: {},
+    tuya: {},
+  };
   const sseClients = [];
 
   function uuid() {
@@ -351,5 +355,5 @@
     return new NativeES(url);
   };
 
-  loadStore().catch((err) => console.error("HADomotics store", err));
+  window.HADomoticsReady = loadStore().catch((err) => console.error("HADomotics store", err));
 })();

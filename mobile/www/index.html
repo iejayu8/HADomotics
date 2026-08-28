@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="stylesheet" href="css/style.css" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+  <link rel="stylesheet" href="css/material-icons.css" />
   <style>
     .sidebar {
       transition: width 0.3s ease, padding 0.3s ease;
@@ -116,7 +116,7 @@
     </aside>
 
     <div class="editor-area">
-      <div class="editor-toolbar" id="editorToolbar" style="display:none">
+      <div class="editor-toolbar" id="editorToolbar">
         <label class="toolbar-label edit-only" id="uploadImageLabel">
           <span class="material-icons">upload_file</span> Upload Floor Plan
           <input type="file" id="imageUpload" accept="image/*" style="display:none" />
@@ -135,7 +135,8 @@
       <div class="canvas-wrapper" id="canvasWrapper">
         <div class="empty-state" id="emptyState">
           <span class="material-icons empty-icon">house</span>
-          <p>Select or create a floor to get started</p>
+          <p>Crea una planta y sube el plano de la casa</p>
+          <button class="btn btn-primary" id="btnEmptyAddFloor" type="button">Añadir planta</button>
         </div>
         <div class="floor-canvas" id="floorCanvas" style="display:none">
           <div class="image-placeholder" id="imagePlaceholder" style="display:none">

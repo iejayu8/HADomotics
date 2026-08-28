@@ -950,8 +950,11 @@ async function loadFloors() {
 // ---------------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", async () => {
+  if (window.HADomoticsReady) await window.HADomoticsReady;
   await loadFloors();
-  setViewMode(true);
+  const hasPlan = (floors || []).some((f) => f && f.image);
+  setViewMode(hasPlan);
+  show("editorToolbar");
   loadTuyaSettingsForm();
   refreshTuyaEntityList();
 
@@ -1020,6 +1023,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (e.target.files[0]) importConfiguration(e.target.files[0]);
     e.target.value = "";
   });
+
+  const emptyAdd = $("btnEmptyAddFloor");
+  if (emptyAdd) {
+    emptyAdd.addEventListener("click", () => {
+      setViewMode(false);
+      show("addFloorModal");
+      $("newFloorName").focus();
+    });
+  }
 
   $("btnAddFloor").addEventListener("click", () => {
     $("newFloorName").value = "";
