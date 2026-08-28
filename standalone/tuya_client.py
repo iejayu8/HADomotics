@@ -29,6 +29,12 @@ _COVER_CODES = ("percent_control", "percent_state", "position", "curtain_percent
 _TEMP_CODES = ("temp_current", "current_temperature", "va_temperature")
 _SETPOINT_CODES = ("temp_set", "temperature", "set_temp")
 _BRIGHT_CODES = ("bright_value", "bright_value_v2", "brightness")
+_CAT_DOMAIN = {
+    "cl": "cover", "clkg": "cover", "ckqdkg": "cover",
+    "dj": "light", "dd": "light", "fwd": "light",
+    "cz": "switch", "kg": "switch", "pc": "switch", "tdq": "switch",
+    "wk": "climate", "kt": "climate",
+}
 
 
 def _norm(s: str) -> str:
@@ -233,14 +239,9 @@ class TuyaAdapter:
                 did = d.get("id") or d.get("devId") or d.get("device_id")
                 if not did:
                     continue
-                status = self._normalize_status(d.get("status") or [])
-                # fetch live status
-                try:
-                    st = cloud.getstatus(did)
-                    status = self._normalize_status(st) or status
-                except Exception:
-                    pass
-                codes = list(status.keys())
+                status = self._live_status(cloud, did, d.get("status"))
+                code_to_dp = self._code_to_dp(cloud, did, d.get("mapping"))
+                codes = list(status.keys()) or list(code_to_dp.keys())
                 new_map[did] = {
                     "id": did,
                     "name": d.get("name") or did,
@@ -251,6 +252,7 @@ class TuyaAdapter:
                     "version": str(d.get("version") or d.get("protocol_version") or "3.3"),
                     "status": status,
                     "codes": codes,
+                    "code_to_dp": code_to_dp,
                     "source": "cloud",
                 }
             with self._lock:
@@ -412,6 +414,8 @@ class TuyaAdapter:
 
     @staticmethod
     def _normalize_status(status: Any) -> dict:
+        if _tuya_err(status):
+            return {}
         out: dict[str, Any] = {}
         if isinstance(status, dict):
             if "result" in status:
@@ -419,11 +423,14 @@ class TuyaAdapter:
             if "dps" in status and isinstance(status["dps"], dict):
                 for k, v in status["dps"].items():
                     out[str(k)] = v
-            else:
-                for k, v in status.items():
-                    if k in ("dps", "success", "t", "tid"):
-                        continue
-                    out[str(k)] = v
+                return out
+            # skip tinytuya error-shaped leftovers
+            if "Err" in status or "Error" in status:
+                return {}
+            for k, v in status.items():
+                if k in ("dps", "success", "t", "tid", "code", "msg"):
+                    continue
+                out[str(k)] = v
             return out
         if isinstance(status, list):
             for item in status:
@@ -434,6 +441,51 @@ class TuyaAdapter:
                     continue
                 out[str(code)] = item.get("value")
         return out
+
+    def _live_status(self, cloud, device_id: str, raw_status=None) -> dict:
+        status = self._normalize_status(raw_status or [])
+        for getter in (
+            lambda: cloud.getstatus(device_id),
+            lambda: cloud.cloudrequest("devices/%s/status" % device_id),
+        ):
+            try:
+                st = getter()
+                err = _tuya_err(st)
+                if err:
+                    log.debug("status %s: %s", device_id, err)
+                    continue
+                parsed = self._normalize_status(st)
+                if parsed:
+                    return parsed
+            except Exception as exc:
+                log.debug("status fetch %s: %s", device_id, exc)
+        return status
+
+    def _code_to_dp(self, cloud, device_id: str, mapping=None) -> dict:
+        code_to_dp: dict[str, str] = {}
+        if isinstance(mapping, dict):
+            for dp_id, info in mapping.items():
+                if isinstance(info, dict) and info.get("code"):
+                    code_to_dp[str(info["code"])] = str(dp_id)
+        if code_to_dp:
+            return code_to_dp
+        try:
+            spec = cloud.getdps(device_id)
+            result = spec.get("result") if isinstance(spec, dict) else None
+            if isinstance(result, dict):
+                for bucket in (result.get("status") or [], result.get("functions") or []):
+                    if not isinstance(bucket, list):
+                        continue
+                    for item in bucket:
+                        if not isinstance(item, dict):
+                            continue
+                        code = item.get("code")
+                        dp_id = item.get("dp_id")
+                        if code is not None and dp_id is not None:
+                            code_to_dp[str(code)] = str(dp_id)
+        except Exception as exc:
+            log.debug("getdps %s: %s", device_id, exc)
+        return code_to_dp
 
     def list_devices(self) -> list[dict]:
         with self._lock:
@@ -488,6 +540,23 @@ class TuyaAdapter:
                     **{f"dp_{k}": v for k, v in status.items()},
                 },
             })
+            slug = _norm(d.get("name") or "")
+            domain = _CAT_DOMAIN.get(d.get("category") or "", "")
+            if slug and domain:
+                primary_code = self._infer_code(d, domain)
+                if primary_code and primary_code in status:
+                    ha_state, attrs = self._to_ha_state(d, primary_code, status[primary_code], status)
+                else:
+                    ha_state, attrs = ("on" if self._device_is_on(status) else "off"), {
+                        "friendly_name": d.get("name"),
+                        "device_id": d["id"],
+                        "code": primary_code,
+                    }
+                states.append({
+                    "entity_id": f"{domain}.{slug}",
+                    "state": ha_state,
+                    "attributes": attrs,
+                })
         return states
 
     @staticmethod
@@ -550,16 +619,14 @@ class TuyaAdapter:
                 log.info("LAN command failed, falling back to cloud: %s", exc)
 
         if used is None:
-            cloud = self._get_cloud()
-            if cloud is None:
-                raise RuntimeError(last_err or "Tuya Cloud not connected")
-            payload = {"commands": commands}
-            res = cloud.sendcommand(device_id, payload)
-            if isinstance(res, dict) and res.get("success") is False:
-                raise RuntimeError(res.get("msg") or "Cloud command failed")
-            used = "cloud"
+            try:
+                self._cloud_command(device_id, commands)
+                used = "cloud"
+            except Exception as exc:
+                raise RuntimeError(str(last_err or exc)) from exc
 
-        # optimistic local cache update
+        cloud = self._get_cloud()
+        live = self._live_status(cloud, device_id, None) if cloud is not None else {}
         with self._lock:
             d = self._devices.get(device_id)
             if d:
@@ -568,9 +635,37 @@ class TuyaAdapter:
                     code = cmd.get("code")
                     if code is not None:
                         st[str(code)] = cmd.get("value")
+                if live:
+                    st.update(live)
                 d["status"] = st
                 d["source"] = used
         return {"ok": True, "via": used, "device_id": device_id}
+
+    def _cloud_command(self, device_id: str, commands: list[dict]) -> None:
+        cloud = self._get_cloud()
+        if cloud is None:
+            raise RuntimeError("Tuya Cloud not connected")
+        payload = {"commands": commands}
+        attempts = [
+            lambda: cloud.sendcommand(device_id, payload),
+            lambda: cloud.cloudrequest("devices/%s/commands" % device_id, action="POST", post=payload),
+        ]
+        last_err = "Cloud command failed"
+        for send in attempts:
+            try:
+                res = send()
+                log.info("Tuya command %s %s -> %s", device_id, commands, str(res)[:400])
+                err = _tuya_err(res)
+                if err:
+                    last_err = err
+                    continue
+                if isinstance(res, dict) and res.get("success") is False:
+                    last_err = str(res.get("msg") or res)
+                    continue
+                return
+            except Exception as exc:
+                last_err = str(exc)
+        raise RuntimeError(last_err)
 
     def _local_command(self, dev: dict, commands: list[dict]) -> None:
         if tinytuya is None:
@@ -586,11 +681,10 @@ class TuyaAdapter:
         for cmd in commands:
             code = str(cmd.get("code"))
             value = cmd.get("value")
-            # tinytuya set_value wants numeric DP; try mapping code→id via status keys
-            dp = code
-            if not str(code).isdigit():
-                # send via index if we only have names — cloud fallback will handle names
-                raise RuntimeError(f"LAN needs numeric DP, got {code}")
+            code_to_dp = dev.get("code_to_dp") or {}
+            dp = code if code.isdigit() else code_to_dp.get(code)
+            if not dp or not str(dp).isdigit():
+                raise RuntimeError("LAN needs numeric DP, got %s (map=%s)" % (code, code_to_dp))
             d.set_value(int(dp), value, nowait=False)
 
     def _demo_command(self, device_id: str, commands: list[dict]) -> dict:
@@ -638,8 +732,8 @@ class TuyaAdapter:
         if not dev:
             raise ValueError(f"Unknown device {device_id}")
         status = dev.get("status") or {}
-        if not code:
-            code = next((c for c in _COVER_CODES if c in status), "percent_control")
+        if not code or code in ("percent_state",):
+            code = next((c for c in _COVER_CODES if c != "percent_state" and (c in status or c in (dev.get("codes") or []))), "percent_control")
         return self.command(device_id, [{"code": code, "value": position}])
 
 

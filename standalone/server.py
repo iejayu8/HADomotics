@@ -101,7 +101,7 @@ def _poll_loop() -> None:
     while not _poll_stop.is_set():
         try:
             adapter.sync_devices()
-            states = adapter.ha_style_states()
+            states = _states_with_aliases()
             _broadcast({"type": "states", "states": states})
             _broadcast({"type": "connected", "ha_ws": adapter.connected, "tuya": adapter.public_status()})
         except Exception as exc:
@@ -378,15 +378,39 @@ def tuya_devices():
 @app.route("/api/tuya/sync", methods=["POST"])
 def tuya_sync():
     devices = adapter.sync_devices(force=True)
-    _broadcast({"type": "states", "states": adapter.ha_style_states()})
+    _broadcast({"type": "states", "states": _states_with_aliases()})
     return jsonify({"ok": True, "devices": devices, "status": adapter.public_status()})
+
+
+def _states_with_aliases():
+    states = adapter.ha_style_states()
+    index = {s.get("entity_id"): s for s in states if s.get("entity_id")}
+    extra = []
+    for floor in load_config().get("floors", []):
+        for el in floor.get("elements", []):
+            eid = (el.get("entity_id") or "").strip()
+            if not eid or eid in index:
+                continue
+            try:
+                did, code = adapter.resolve_entity(eid, el.get("type") or "")
+            except Exception:
+                continue
+            src = index.get("tuya.%s.%s" % (did, code)) if code else None
+            src = src or index.get("tuya.%s" % did)
+            if not src:
+                continue
+            aliased = dict(src)
+            aliased["entity_id"] = eid
+            extra.append(aliased)
+            index[eid] = aliased
+    return states + extra
 
 
 @app.route("/api/ha/states", methods=["GET"])
 @app.route("/api/tuya/states", methods=["GET"])
 def ha_states():
     try:
-        return jsonify(adapter.ha_style_states())
+        return jsonify(_states_with_aliases())
     except Exception as exc:
         log.warning("states: %s", exc)
         return jsonify([])
@@ -402,7 +426,7 @@ def ha_stream():
         try:
             yield f"data: {json.dumps({'type': 'connected', 'ha_ws': adapter.connected, 'tuya': adapter.public_status()})}\n\n"
             try:
-                snapshot = adapter.ha_style_states()
+                snapshot = _states_with_aliases()
             except Exception:
                 snapshot = []
             if snapshot:
@@ -445,7 +469,7 @@ def ha_call_service(domain: str, service: str):
             result = adapter.command(device_id, [{"code": code or "switch_1", "value": False}])
         else:
             result = adapter.toggle(device_id, code)
-        _broadcast({"type": "states", "states": adapter.ha_style_states()})
+        _broadcast({"type": "states", "states": _states_with_aliases()})
         return jsonify(result)
     except Exception as exc:
         log.warning("service %s.%s failed: %s", domain, service, exc)
