@@ -37,6 +37,19 @@ _CAT_DOMAIN = {
 }
 
 
+def _is_private_ip(ip: str) -> bool:
+    if not ip:
+        return False
+    parts = ip.split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        a, b = int(parts[0]), int(parts[1])
+    except ValueError:
+        return False
+    return a == 10 or (a == 192 and b == 168) or (a == 172 and 16 <= b <= 31) or a == 127
+
+
 def _norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode("ascii")
     s = s.lower()
@@ -239,20 +252,32 @@ class TuyaAdapter:
                 did = d.get("id") or d.get("devId") or d.get("device_id")
                 if not did:
                     continue
-                status = self._live_status(cloud, did, d.get("status"))
-                code_to_dp = self._code_to_dp(cloud, did, d.get("mapping"))
+                status = self._normalize_status(d.get("status") or [])
+                if not status:
+                    status = self._live_status(cloud, did, None)
+                mapping = d.get("mapping")
+                code_to_dp: dict[str, str] = {}
+                if isinstance(mapping, dict):
+                    for dp_id, info in mapping.items():
+                        if isinstance(info, dict) and info.get("code"):
+                            code_to_dp[str(info["code"])] = str(dp_id)
                 codes = list(status.keys()) or list(code_to_dp.keys())
+                raw_ip = d.get("ip") or d.get("ip_addr") or ""
+                prev = self._devices.get(did) or {}
+                lan_ip = prev.get("ip") or ""
+                if _is_private_ip(raw_ip):
+                    lan_ip = raw_ip
                 new_map[did] = {
                     "id": did,
                     "name": d.get("name") or did,
                     "category": d.get("category") or "",
                     "online": bool(d.get("online", True)),
-                    "ip": d.get("ip") or d.get("ip_addr") or "",
+                    "ip": lan_ip if _is_private_ip(lan_ip) else "",
                     "local_key": d.get("key") or d.get("local_key") or "",
                     "version": str(d.get("version") or d.get("protocol_version") or "3.3"),
                     "status": status,
                     "codes": codes,
-                    "code_to_dp": code_to_dp,
+                    "code_to_dp": code_to_dp or (prev.get("code_to_dp") or {}),
                     "source": "cloud",
                 }
             with self._lock:
@@ -612,29 +637,32 @@ class TuyaAdapter:
         last_err = None
         can_lan = (
             self.prefer_local
-            and dev.get("ip")
+            and _is_private_ip(dev.get("ip") or "")
             and dev.get("local_key")
             and self._lan_dps_ready(dev, commands)
         )
         log.info(
-            "command device=%s name=%s online=%s cmds=%s lan=%s",
-            device_id, dev.get("name"), dev.get("online"), commands, bool(can_lan),
+            "command device=%s name=%s online=%s ip=%s cmds=%s lan=%s",
+            device_id, dev.get("name"), dev.get("online"), dev.get("ip"), commands, bool(can_lan),
         )
-        if can_lan:
+        last_err = None
+        tuya_res = None
+        used = None
+        try:
+            tuya_res = self._cloud_command(device_id, commands)
+            used = "cloud"
+        except Exception as persist:
+            last_err = persist
+            log.info("Cloud command failed, will try LAN if possible: %s", persist)
+        if used is None and can_lan:
             try:
                 self._local_command(dev, commands)
                 used = "lan"
             except Exception as persist:
                 last_err = persist
-                log.info("LAN command failed, falling back to cloud: %s", persist)
-
-        tuya_res = None
+                log.info("LAN command failed: %s", persist)
         if used is None:
-            try:
-                tuya_res = self._cloud_command(device_id, commands)
-                used = "cloud"
-            except Exception as persist:
-                raise RuntimeError(str(last_err or persist)) from persist
+            raise RuntimeError(str(last_err) or "Tuya command failed")
 
         cloud = self._get_cloud()
         live = self._live_status(cloud, device_id, None) if cloud is not None else {}
@@ -674,10 +702,10 @@ class TuyaAdapter:
             raise RuntimeError("Tuya Cloud not connected")
         payload = {"commands": commands}
         attempts = [
-            ("v1.0/devices/commands", lambda: cloud.cloudrequest(
-                "devices/%s/commands" % device_id, action="POST", post=payload
-            )),
             ("iot-03/sendcommand", lambda: cloud.sendcommand(device_id, payload)),
+            ("v1.0/devices/commands", lambda: cloud.cloudrequest(
+                "/v1.0/devices/%s/commands" % device_id, action="POST", post=payload
+            )),
         ]
         last_err = "Cloud command failed"
         for label, send in attempts:
@@ -754,24 +782,21 @@ class TuyaAdapter:
     def _cover_variants(self, dev: dict, position: int, code: Optional[str]) -> list:
         status = dev.get("status") or {}
         codes = set(dev.get("codes") or []) | set(status.keys()) | set((dev.get("code_to_dp") or {}).keys())
-        if not code or code == "percent_state":
-            code = next((c for c in ("percent_control", "position", "curtain_percent") if c in codes), "percent_control")
-        variants = [
-            [{"code": code, "value": int(position)}],
-            [{"code": "percent_control", "value": int(position)}],
-            [{"code": "position", "value": int(position)}],
-        ]
-        if position >= 99:
-            variants.append([{"code": "control", "value": "open"}])
-        elif position <= 1:
-            variants.append([{"code": "control", "value": "close"}])
-        else:
-            variants.append([
-                {"code": "control", "value": "open"},
-                {"code": "percent_control", "value": int(position)},
-            ])
-        # inverted (some Tuya blinds: 0 = open)
-        variants.append([{"code": "percent_control", "value": int(100 - position)}])
+        position = int(position)
+        variants = []
+        if "percent_control" in codes or code == "percent_control":
+            variants.append([{"code": "percent_control", "value": position}])
+        if "control" in codes:
+            if position >= 99:
+                variants.append([{"code": "control", "value": "open"}])
+            elif position <= 1:
+                variants.append([{"code": "control", "value": "close"}])
+            else:
+                variants.append([{"code": "percent_control", "value": position}])
+        if "position" in codes:
+            variants.append([{"code": "position", "value": position}])
+        if not variants:
+            variants.append([{"code": code or "percent_control", "value": position}])
         seen = []
         out = []
         for v in variants:
