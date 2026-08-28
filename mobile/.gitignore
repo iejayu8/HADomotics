@@ -4,6 +4,9 @@ android/app/build/
 android/build/
 android/.gradle/
 android/app/src/main/assets/public/
+android/keystore.properties
+android/*.jks
+android/*.keystore
 ios/App/Pods/
 ios/App/build/
 ios/App/App/public/
