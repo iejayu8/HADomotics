@@ -610,20 +610,31 @@ class TuyaAdapter:
 
         used = None
         last_err = None
-        if self.prefer_local and dev.get("ip") and dev.get("local_key"):
+        can_lan = (
+            self.prefer_local
+            and dev.get("ip")
+            and dev.get("local_key")
+            and self._lan_dps_ready(dev, commands)
+        )
+        log.info(
+            "command device=%s name=%s online=%s cmds=%s lan=%s",
+            device_id, dev.get("name"), dev.get("online"), commands, bool(can_lan),
+        )
+        if can_lan:
             try:
                 self._local_command(dev, commands)
                 used = "lan"
-            except Exception as exc:
-                last_err = exc
-                log.info("LAN command failed, falling back to cloud: %s", exc)
+            except Exception as persist:
+                last_err = persist
+                log.info("LAN command failed, falling back to cloud: %s", persist)
 
+        tuya_res = None
         if used is None:
             try:
-                self._cloud_command(device_id, commands)
+                tuya_res = self._cloud_command(device_id, commands)
                 used = "cloud"
-            except Exception as exc:
-                raise RuntimeError(str(last_err or exc)) from exc
+            except Exception as persist:
+                raise RuntimeError(str(last_err or persist)) from persist
 
         cloud = self._get_cloud()
         live = self._live_status(cloud, device_id, None) if cloud is not None else {}
@@ -639,37 +650,56 @@ class TuyaAdapter:
                     st.update(live)
                 d["status"] = st
                 d["source"] = used
-        return {"ok": True, "via": used, "device_id": device_id}
+        return {
+            "ok": True,
+            "via": used,
+            "device_id": device_id,
+            "tuya": tuya_res,
+            "status": live,
+        }
 
-    def _cloud_command(self, device_id: str, commands: list[dict]) -> None:
+    @staticmethod
+    def _lan_dps_ready(dev: dict, commands: list[dict]) -> bool:
+        mapping = dev.get("code_to_dp") or {}
+        for cmd in commands:
+            code = str(cmd.get("code"))
+            dp = code if code.isdigit() else mapping.get(code)
+            if not dp or not str(dp).isdigit():
+                return False
+        return True
+
+    def _cloud_command(self, device_id: str, commands: list[dict]):
         cloud = self._get_cloud()
         if cloud is None:
             raise RuntimeError("Tuya Cloud not connected")
         payload = {"commands": commands}
         attempts = [
-            lambda: cloud.sendcommand(device_id, payload),
-            lambda: cloud.cloudrequest("devices/%s/commands" % device_id, action="POST", post=payload),
+            ("v1.0/devices/commands", lambda: cloud.cloudrequest(
+                "devices/%s/commands" % device_id, action="POST", post=payload
+            )),
+            ("iot-03/sendcommand", lambda: cloud.sendcommand(device_id, payload)),
         ]
         last_err = "Cloud command failed"
-        for send in attempts:
+        for label, send in attempts:
             try:
                 res = send()
-                log.info("Tuya command %s %s -> %s", device_id, commands, str(res)[:400])
+                log.info("Tuya %s %s %s -> %s", label, device_id, commands, str(res)[:500])
                 err = _tuya_err(res)
                 if err:
-                    last_err = err
+                    last_err = "%s: %s" % (label, err)
                     continue
-                if isinstance(res, dict) and res.get("success") is False:
-                    last_err = str(res.get("msg") or res)
+                if not (isinstance(res, dict) and res.get("success") is True):
+                    last_err = "%s: %s" % (label, res)
                     continue
-                return
-            except Exception as exc:
-                last_err = str(exc)
+                return res
+            except Exception as persist:
+                last_err = "%s: %s" % (label, persist)
         raise RuntimeError(last_err)
 
     def _local_command(self, dev: dict, commands: list[dict]) -> None:
         if tinytuya is None:
             raise RuntimeError("tinytuya missing")
+        code_to_dp = dev.get("code_to_dp") or {}
         d = tinytuya.Device(
             dev_id=dev["id"],
             address=dev["ip"],
@@ -681,7 +711,6 @@ class TuyaAdapter:
         for cmd in commands:
             code = str(cmd.get("code"))
             value = cmd.get("value")
-            code_to_dp = dev.get("code_to_dp") or {}
             dp = code if code.isdigit() else code_to_dp.get(code)
             if not dp or not str(dp).isdigit():
                 raise RuntimeError("LAN needs numeric DP, got %s (map=%s)" % (code, code_to_dp))
@@ -691,7 +720,7 @@ class TuyaAdapter:
         with self._lock:
             d = self._devices.get(device_id)
             if not d:
-                raise ValueError(f"Unknown demo device: {device_id}")
+                raise ValueError("Unknown demo device: %s" % device_id)
             st = dict(d.get("status") or {})
             for cmd in commands:
                 code = str(cmd.get("code"))
@@ -707,12 +736,11 @@ class TuyaAdapter:
             self.sync_devices(force=True)
             dev = self.get_device(device_id)
         if not dev:
-            raise ValueError(f"Unknown device {device_id}")
+            raise ValueError("Unknown device %s" % device_id)
         status = dev.get("status") or {}
         if not code:
             code = next((c for c in _SWITCH_CODES if c in status), None)
             if not code:
-                # first boolean-like
                 for k, v in status.items():
                     if isinstance(v, bool) or v in (0, 1):
                         code = k
@@ -723,6 +751,37 @@ class TuyaAdapter:
         new_val = not bool(current)
         return self.command(device_id, [{"code": code, "value": new_val}])
 
+    def _cover_variants(self, dev: dict, position: int, code: Optional[str]) -> list:
+        status = dev.get("status") or {}
+        codes = set(dev.get("codes") or []) | set(status.keys()) | set((dev.get("code_to_dp") or {}).keys())
+        if not code or code == "percent_state":
+            code = next((c for c in ("percent_control", "position", "curtain_percent") if c in codes), "percent_control")
+        variants = [
+            [{"code": code, "value": int(position)}],
+            [{"code": "percent_control", "value": int(position)}],
+            [{"code": "position", "value": int(position)}],
+        ]
+        if position >= 99:
+            variants.append([{"code": "control", "value": "open"}])
+        elif position <= 1:
+            variants.append([{"code": "control", "value": "close"}])
+        else:
+            variants.append([
+                {"code": "control", "value": "open"},
+                {"code": "percent_control", "value": int(position)},
+            ])
+        # inverted (some Tuya blinds: 0 = open)
+        variants.append([{"code": "percent_control", "value": int(100 - position)}])
+        seen = []
+        out = []
+        for v in variants:
+            key = str(v)
+            if key in seen:
+                continue
+            seen.append(key)
+            out.append(v)
+        return out
+
     def set_cover(self, device_id: str, position: int, code: Optional[str] = None) -> dict:
         position = max(0, min(100, int(position)))
         dev = self.get_device(device_id)
@@ -730,11 +789,31 @@ class TuyaAdapter:
             self.sync_devices(force=True)
             dev = self.get_device(device_id)
         if not dev:
-            raise ValueError(f"Unknown device {device_id}")
-        status = dev.get("status") or {}
-        if not code or code in ("percent_state",):
-            code = next((c for c in _COVER_CODES if c != "percent_state" and (c in status or c in (dev.get("codes") or []))), "percent_control")
-        return self.command(device_id, [{"code": code, "value": position}])
+            raise ValueError("Unknown device %s" % device_id)
+        before = dict(dev.get("status") or {})
+        last_err = None
+        last_result = None
+        for cmds in self._cover_variants(dev, position, code):
+            try:
+                result = self.command(device_id, cmds)
+                last_result = result
+                cloud = self._get_cloud()
+                if cloud is not None:
+                    time.sleep(0.7)
+                    after = self._live_status(cloud, device_id, None)
+                    result["status"] = after
+                    log.info("cover after %s cmds=%s before=%s after=%s", device_id, cmds, before, after)
+                    if after and before and after == before:
+                        last_err = "Tuya OK but status unchanged"
+                        continue
+                return result
+            except Exception as persist:
+                last_err = persist
+                log.info("cover variant failed %s: %s", cmds, persist)
+        if last_result:
+            last_result["warning"] = str(last_err) if last_err else ""
+            return last_result
+        raise RuntimeError(str(last_err) or "Cover command failed")
 
 
 adapter = TuyaAdapter()

@@ -457,12 +457,14 @@ def _parse_tuya_entity(entity_id: str, domain: str = "") -> tuple[str, str | Non
 @app.route("/api/tuya/services/<domain>/<service>", methods=["POST"])
 def ha_call_service(domain: str, service: str):
     data = request.get_json(force=True) or {}
-    entity_id = data.get("entity_id") or ""
+    entity_id = data.get("entity_id") or (data.get("service_data") or {}).get("entity_id") or ""
     device_id, code = _parse_tuya_entity(entity_id, domain)
+    log.info("service %s.%s entity=%s -> device=%s code=%s body=%s", domain, service, entity_id, device_id, code, data)
     try:
-        if service in ("set_cover_position", "set_position") or domain == "cover" and "position" in data:
-            pos = int(data.get("position", 50))
-            result = adapter.set_cover(device_id, pos, code)
+        nested = data.get("service_data") if isinstance(data.get("service_data"), dict) else {}
+        if service in ("set_cover_position", "set_position") or (domain == "cover" and ("position" in data or "position" in nested)):
+            pos = data.get("position", nested.get("position", 50))
+            result = adapter.set_cover(device_id, int(pos), code)
         elif service == "turn_on":
             result = adapter.command(device_id, [{"code": code or "switch_1", "value": True}])
         elif service == "turn_off":
@@ -470,6 +472,7 @@ def ha_call_service(domain: str, service: str):
         else:
             result = adapter.toggle(device_id, code)
         _broadcast({"type": "states", "states": _states_with_aliases()})
+        log.info("service result %s", result)
         return jsonify(result)
     except Exception as exc:
         log.warning("service %s.%s failed: %s", domain, service, exc)
