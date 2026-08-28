@@ -100,16 +100,21 @@ def _broadcast(msg: dict) -> None:
 
 
 def _poll_loop() -> None:
+    ticks = 0
     while not _poll_stop.is_set():
         try:
-            adapter.sync_devices()
+            ticks += 1
+            if ticks == 1 or ticks % 15 == 0:
+                adapter.sync_devices()
+            else:
+                adapter.refresh_statuses()
             states = _states_with_aliases()
             _broadcast({"type": "states", "states": states})
             _broadcast({"type": "connected", "ha_ws": adapter.connected, "tuya": adapter.public_status()})
         except Exception as exc:
             log.debug("poll: %s", exc)
             _broadcast({"type": "connected", "ha_ws": False})
-        _poll_stop.wait(8)
+        _poll_stop.wait(3)
 
 
 # ---------------------------------------------------------------------------

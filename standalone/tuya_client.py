@@ -29,6 +29,13 @@ _COVER_CODES = ("percent_control", "percent_state", "position", "curtain_percent
 _TEMP_CODES = ("temp_current", "current_temperature", "va_temperature")
 _SETPOINT_CODES = ("temp_set", "temperature", "set_temp")
 _BRIGHT_CODES = ("bright_value", "bright_value_v2", "brightness")
+_DOOR_CODES = (
+    "doorcontact_state", "doorcontact", "door_contact",
+    "door_state", "closed", "switch_type",
+)
+_DOOR_NAME_HINTS = (
+    "garaje", "garage", "puerta", "porton", "portón", "door", "gate", "cancel",
+)
 _CAT_DOMAIN = {
     "cl": "cover", "clkg": "cover", "ckqdkg": "cover",
     "dj": "light", "dd": "light", "fwd": "light",
@@ -80,6 +87,7 @@ class TuyaAdapter:
         self._cloud_api = None
         self._devices: dict[str, dict] = {}
         self._last_sync = 0.0
+        self._last_status = 0.0
         self.demo = True
         self.connected = False
         self.last_error = ""
@@ -227,7 +235,7 @@ class TuyaAdapter:
     def sync_devices(self, force: bool = False) -> list[dict]:
         if self.demo:
             return self.list_devices()
-        if not force and time.time() - self._last_sync < 8:
+        if not force and time.time() - self._last_sync < 45:
             return self.list_devices()
         cloud = self._get_cloud()
         if cloud is None:
@@ -286,14 +294,58 @@ class TuyaAdapter:
                 self.connected = True
                 self.last_error = "" if new_map else (fetch_err or "0 dispositivos. Vincula la cuenta Smart Life al proyecto Cloud y revisa la región.")
             log.debug("Tuya sync: %d devices", len(new_map))
-            # optional LAN scan to fill IPs
-            if self.prefer_local:
+            if force and self.prefer_local:
                 self._scan_lan_ips()
         except Exception as exc:
             log.warning("sync_devices failed: %s", exc)
             with self._lock:
                 self.last_error = str(exc)
                 self.connected = False
+        return self.list_devices()
+
+    def refresh_statuses(self) -> list[dict]:
+        """Update DP values for already-known devices without re-listing the catalog."""
+        if self.demo:
+            return self.list_devices()
+        cloud = self._get_cloud()
+        if cloud is None:
+            return self.list_devices()
+        with self._lock:
+            ids = list(self._devices.keys())
+        if not ids:
+            return self.sync_devices()
+        updated: dict[str, dict] = {}
+        try:
+            raw = cloud.cloudrequest(
+                "/v1.0/iot-03/devices/status",
+                query={"device_ids": ",".join(ids[:20])},
+            )
+            rows = []
+            if isinstance(raw, dict) and isinstance(raw.get("result"), list):
+                rows = raw["result"]
+            elif isinstance(raw, dict) and isinstance(raw.get("result"), dict):
+                maybe = raw["result"].get("list") or raw["result"].get("devices") or []
+                if isinstance(maybe, list):
+                    rows = maybe
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                did = row.get("id") or row.get("device_id")
+                st = self._normalize_status(row.get("status") or row)
+                if did and st:
+                    updated[did] = st
+        except Exception:
+            pass
+        if len(updated) < max(1, len(ids) // 2):
+            for did in ids:
+                st = self._live_status(cloud, did, None)
+                if st:
+                    updated[did] = st
+        with self._lock:
+            for did, st in updated.items():
+                if did in self._devices and st:
+                    self._devices[did]["status"] = st
+            self._last_status = time.time()
         return self.list_devices()
 
     def _extract_device_dicts(self, raw: Any) -> tuple[list[dict], str]:
@@ -378,7 +430,8 @@ class TuyaAdapter:
         with self._lock:
             if eid in self._devices:
                 return eid, None
-        if not self.demo:
+            have = bool(self._devices)
+        if not self.demo and not have:
             self.sync_devices()
         slug = parts[-1]
         nslug = _norm(slug)
@@ -400,11 +453,18 @@ class TuyaAdapter:
     def _infer_code(device: dict, domain: str) -> Optional[str]:
         status = device.get("status") or {}
         codes = device.get("codes") or list(status.keys())
-        if domain in ("cover", "curtain"):
+        if domain in ("cover", "curtain", "garage", "door"):
+            for c in _DOOR_CODES:
+                if c in codes or c in status:
+                    return c
             for c in _COVER_CODES:
                 if c in codes or c in status:
                     return c
         if domain in ("light", "switch", "button"):
+            if TuyaAdapter._is_door_like(device.get("name") or ""):
+                for c in _DOOR_CODES:
+                    if c in codes or c in status:
+                        return c
             for c in _SWITCH_CODES:
                 if c in codes or c in status:
                     return c
@@ -535,7 +595,6 @@ class TuyaAdapter:
     # ------------------------------------------------------------------
     def ha_style_states(self) -> list[dict]:
         """Expose Tuya DPs as HA-like state objects so the existing UI works."""
-        self.sync_devices()
         states = []
         with self._lock:
             devices = list(self._devices.values())
@@ -552,7 +611,7 @@ class TuyaAdapter:
             # also a device-level entity
             states.append({
                 "entity_id": f"tuya.{d['id']}",
-                "state": "on" if self._device_is_on(status) else "off",
+                "state": "on" if self._device_is_on(status, d) else "off",
                 "attributes": {
                     "friendly_name": d.get("name"),
                     "device_id": d["id"],
@@ -564,12 +623,18 @@ class TuyaAdapter:
             })
             slug = _norm(d.get("name") or "")
             domain = _CAT_DOMAIN.get(d.get("category") or "", "")
+            if "percent_control" in status or "percent_state" in status or self._is_door_like(d.get("name") or ""):
+                if self._is_door_like(d.get("name") or "") or domain != "light":
+                    if "percent_control" in status or "percent_state" in status:
+                        domain = "cover"
+            if self._is_door_like(d.get("name") or "") and domain in ("", "switch"):
+                domain = "cover" if ("percent_control" in status or "percent_state" in status) else "switch"
             if slug and domain:
                 primary_code = self._infer_code(d, domain)
                 if primary_code and primary_code in status:
                     ha_state, attrs = self._to_ha_state(d, primary_code, status[primary_code], status)
                 else:
-                    ha_state, attrs = ("on" if self._device_is_on(status) else "off"), {
+                    ha_state, attrs = ("on" if self._device_is_on(status, d) else "off"), {
                         "friendly_name": d.get("name"),
                         "device_id": d["id"],
                         "code": primary_code,
@@ -582,13 +647,38 @@ class TuyaAdapter:
         return states
 
     @staticmethod
-    def _device_is_on(status: dict) -> bool:
+    def _is_door_like(name: str) -> bool:
+        n = _norm(name)
+        return any(_norm(h) in n for h in _DOOR_NAME_HINTS)
+
+    @staticmethod
+    def _value_is_open(value: Any) -> bool:
+        s = str(value).strip().lower()
+        if s in ("open", "opened", "on", "true", "1"):
+            return True
+        if s in ("closed", "close", "off", "false", "0", "stop"):
+            return False
+        return bool(value)
+
+    def _device_is_on(self, status: dict, device: Optional[dict] = None) -> bool:
+        for c in _DOOR_CODES:
+            if c not in status:
+                continue
+            v = status[c]
+            if c == "closed":
+                return not self._value_is_open(v)
+            return self._value_is_open(v)
+        name = (device or {}).get("name") or ""
+        door = self._is_door_like(name)
         for c in _SWITCH_CODES:
             if c in status:
-                return bool(status[c])
-        pos = status.get("percent_control", status.get("percent_state"))
+                raw = status[c]
+                val = self._value_is_open(raw) if isinstance(raw, str) else bool(raw)
+                return (not val) if door else val
+        pos = status.get("percent_state", status.get("percent_control"))
         if isinstance(pos, (int, float)):
-            return pos > 0
+            is_open = pos > 0
+            return (not is_open) if door else is_open
         return False
 
     @staticmethod
@@ -600,12 +690,20 @@ class TuyaAdapter:
             "code": code,
             "source": device.get("source"),
         }
-        if code in _COVER_CODES or isinstance(value, (int, float)) and "percent" in code:
+        if code in _DOOR_CODES:
+            is_open = TuyaAdapter._value_is_open(value)
+            if code == "closed":
+                is_open = not is_open
+            attrs["device_class"] = "garage"
+            return ("open" if is_open else "closed"), attrs
+        if code in _COVER_CODES or (isinstance(value, (int, float)) and "percent" in code):
             pos = int(value) if isinstance(value, (int, float)) else 0
             attrs["current_position"] = pos
-            attrs["device_class"] = "shutter"
-            state = "open" if pos > 0 else "closed"
-            return state, attrs
+            attrs["device_class"] = "garage" if TuyaAdapter._is_door_like(name) else "shutter"
+            is_open = pos > 0
+            if TuyaAdapter._is_door_like(name):
+                is_open = not is_open
+            return ("open" if is_open else "closed"), attrs
         if code in _TEMP_CODES or code in _SETPOINT_CODES:
             attrs["unit_of_measurement"] = "°C"
             if "temp_set" in status:
@@ -613,10 +711,12 @@ class TuyaAdapter:
             if "temp_current" in status:
                 attrs["current_temperature"] = status.get("temp_current")
             return str(value), attrs
-        if isinstance(value, bool):
-            return ("on" if value else "off"), attrs
-        if value in (0, 1) and code in _SWITCH_CODES:
-            return ("on" if value else "off"), attrs
+        if isinstance(value, bool) or (value in (0, 1) and code in _SWITCH_CODES):
+            on = bool(value)
+            if TuyaAdapter._is_door_like(name):
+                on = not on
+                return ("open" if on else "closed"), attrs
+            return ("on" if on else "off"), attrs
         return str(value), attrs
 
     # ------------------------------------------------------------------
@@ -658,8 +758,6 @@ class TuyaAdapter:
             raise RuntimeError(str(last_err) or "Tuya command failed")
         log.info("OK %s %s via %s", dev.get("name"), commands, used)
 
-        cloud = self._get_cloud()
-        live = self._live_status(cloud, device_id, None) if cloud is not None else {}
         with self._lock:
             d = self._devices.get(device_id)
             if d:
@@ -668,10 +766,11 @@ class TuyaAdapter:
                     code = cmd.get("code")
                     if code is not None:
                         st[str(code)] = cmd.get("value")
-                if live:
-                    st.update(live)
                 d["status"] = st
                 d["source"] = used
+                live = st
+            else:
+                live = {}
         return {
             "ok": True,
             "via": used,
@@ -808,28 +907,13 @@ class TuyaAdapter:
             dev = self.get_device(device_id)
         if not dev:
             raise ValueError("Unknown device %s" % device_id)
-        before = dict(dev.get("status") or {})
         last_err = None
-        last_result = None
         for cmds in self._cover_variants(dev, position, code):
             try:
-                result = self.command(device_id, cmds)
-                last_result = result
-                cloud = self._get_cloud()
-                if cloud is not None:
-                    time.sleep(0.7)
-                    after = self._live_status(cloud, device_id, None)
-                    result["status"] = after
-                    if after and before and after == before:
-                        last_err = "estado no cambió"
-                        continue
-                return result
+                return self.command(device_id, cmds)
             except Exception as persist:
                 last_err = persist
                 log.warning("FAIL %s %s: %s", dev.get("name"), cmds, persist)
-        if last_result:
-            last_result["warning"] = str(last_err) if last_err else ""
-            return last_result
         raise RuntimeError(str(last_err) or "Cover command failed")
 
 

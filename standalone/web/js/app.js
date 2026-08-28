@@ -567,6 +567,10 @@ function showQuickPositionModal(el) {
           method: "POST",
           body: JSON.stringify({ entity_id: el.entity_id, position: pos }),
         });
+        if (!entityStates[el.entity_id]) entityStates[el.entity_id] = { state: "", attributes: {} };
+        entityStates[el.entity_id].state = pos > 0 ? "open" : "closed";
+        entityStates[el.entity_id].attributes = Object.assign({}, entityStates[el.entity_id].attributes, { current_position: pos });
+        updateElementStates();
         await fetchEntityStates();
         toast(`Cover set to ${pos}%`, "success");
       } catch (err) {
@@ -615,6 +619,10 @@ async function handleElementTap(el, overlayEl) {
         method: "POST",
         body: JSON.stringify({ entity_id: el.entity_id, position }),
       });
+      if (!entityStates[el.entity_id]) entityStates[el.entity_id] = { state: "", attributes: {} };
+      entityStates[el.entity_id].state = position > 0 ? "open" : "closed";
+      entityStates[el.entity_id].attributes = Object.assign({}, entityStates[el.entity_id].attributes, { current_position: position });
+      updateElementStates();
     }
     else if (action === "quick-position") {
       showQuickPositionModal(el);
