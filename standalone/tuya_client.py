@@ -285,7 +285,7 @@ class TuyaAdapter:
                 self._last_sync = time.time()
                 self.connected = True
                 self.last_error = "" if new_map else (fetch_err or "0 dispositivos. Vincula la cuenta Smart Life al proyecto Cloud y revisa la región.")
-            log.info("Tuya sync: %d devices", len(new_map))
+            log.debug("Tuya sync: %d devices", len(new_map))
             # optional LAN scan to fill IPs
             if self.prefer_local:
                 self._scan_lan_ips()
@@ -322,7 +322,6 @@ class TuyaAdapter:
         try:
             cloud.use_old_device_list = False
             raw = cloud.getdevices(verbose=True)
-            log.info("Tuya getdevices(verbose): %s", str(raw)[:800])
             devs, err = self._extract_device_dicts(raw)
             if devs:
                 return devs, ""
@@ -334,7 +333,6 @@ class TuyaAdapter:
         try:
             cloud.use_old_device_list = False
             raw = cloud.getdevices()
-            log.info("Tuya getdevices(): %s", str(raw)[:800])
             devs, err = self._extract_device_dicts(raw)
             if devs:
                 return devs, ""
@@ -353,7 +351,6 @@ class TuyaAdapter:
                         raw = cloud.cloudrequest("users/%s/devices" % uid)
                     else:
                         raw = cloud._get_all_devices(uid=uid)
-                    log.info("Tuya %s: %s", label, str(raw)[:800])
                     devs, err = self._extract_device_dicts(raw)
                     if devs:
                         return devs, ""
@@ -641,10 +638,6 @@ class TuyaAdapter:
             and dev.get("local_key")
             and self._lan_dps_ready(dev, commands)
         )
-        log.info(
-            "command device=%s name=%s online=%s ip=%s cmds=%s lan=%s",
-            device_id, dev.get("name"), dev.get("online"), dev.get("ip"), commands, bool(can_lan),
-        )
         last_err = None
         tuya_res = None
         used = None
@@ -653,16 +646,17 @@ class TuyaAdapter:
             used = "cloud"
         except Exception as persist:
             last_err = persist
-            log.info("Cloud command failed, will try LAN if possible: %s", persist)
+            log.warning("Cloud failed (%s): %s", dev.get("name"), persist)
         if used is None and can_lan:
             try:
                 self._local_command(dev, commands)
                 used = "lan"
             except Exception as persist:
                 last_err = persist
-                log.info("LAN command failed: %s", persist)
+                log.warning("LAN failed (%s): %s", dev.get("name"), persist)
         if used is None:
             raise RuntimeError(str(last_err) or "Tuya command failed")
+        log.info("OK %s %s via %s", dev.get("name"), commands, used)
 
         cloud = self._get_cloud()
         live = self._live_status(cloud, device_id, None) if cloud is not None else {}
@@ -711,7 +705,6 @@ class TuyaAdapter:
         for label, send in attempts:
             try:
                 res = send()
-                log.info("Tuya %s %s %s -> %s", label, device_id, commands, str(res)[:500])
                 err = _tuya_err(res)
                 if err:
                     last_err = "%s: %s" % (label, err)
@@ -827,14 +820,13 @@ class TuyaAdapter:
                     time.sleep(0.7)
                     after = self._live_status(cloud, device_id, None)
                     result["status"] = after
-                    log.info("cover after %s cmds=%s before=%s after=%s", device_id, cmds, before, after)
                     if after and before and after == before:
-                        last_err = "Tuya OK but status unchanged"
+                        last_err = "estado no cambió"
                         continue
                 return result
             except Exception as persist:
                 last_err = persist
-                log.info("cover variant failed %s: %s", cmds, persist)
+                log.warning("FAIL %s %s: %s", dev.get("name"), cmds, persist)
         if last_result:
             last_result["warning"] = str(last_err) if last_err else ""
             return last_result

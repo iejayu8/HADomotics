@@ -24,6 +24,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 log = logging.getLogger("hadomotics.standalone")
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
+logging.getLogger("tinytuya").setLevel(logging.WARNING)
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
@@ -459,7 +461,6 @@ def ha_call_service(domain: str, service: str):
     data = request.get_json(force=True) or {}
     entity_id = data.get("entity_id") or (data.get("service_data") or {}).get("entity_id") or ""
     device_id, code = _parse_tuya_entity(entity_id, domain)
-    log.info("service %s.%s entity=%s -> device=%s code=%s body=%s", domain, service, entity_id, device_id, code, data)
     try:
         nested = data.get("service_data") if isinstance(data.get("service_data"), dict) else {}
         if service in ("set_cover_position", "set_position") or (domain == "cover" and ("position" in data or "position" in nested)):
@@ -472,7 +473,6 @@ def ha_call_service(domain: str, service: str):
         else:
             result = adapter.toggle(device_id, code)
         _broadcast({"type": "states", "states": _states_with_aliases()})
-        log.info("service result %s", result)
         return jsonify(result)
     except Exception as exc:
         log.warning("service %s.%s failed: %s", domain, service, exc)
