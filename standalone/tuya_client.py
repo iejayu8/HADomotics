@@ -37,7 +37,7 @@ class TuyaAdapter:
         self.uid = ""
         self.region = "eu"
         self.prefer_local = True
-        self._cloud = None
+        self._cloud_api = None
         self._devices: dict[str, dict] = {}
         self._last_sync = 0.0
         self.demo = True
@@ -53,7 +53,7 @@ class TuyaAdapter:
             self.uid = (cfg.get("uid") or "").strip()
             self.region = (cfg.get("region") or "eu").strip().lower()
             self.prefer_local = bool(cfg.get("prefer_local", True))
-            self._cloud = None
+            self._cloud_api = None
             self.connected = False
             self.last_error = ""
             if not self.access_id or not self.access_secret:
@@ -169,7 +169,7 @@ class TuyaAdapter:
             if isinstance(res, dict) and res.get("success") is False:
                 return str(res.get("msg") or res.get("error") or "Cloud auth failed")
             with self._lock:
-                self._cloud = cloud
+                self._cloud_api = cloud
                 self.connected = True
                 self.last_error = ""
             log.info("Tuya Cloud connected (region=%s)", self.region)
@@ -178,9 +178,9 @@ class TuyaAdapter:
             log.warning("Tuya Cloud connect failed: %s", exc)
             return str(exc)
 
-    def _cloud(self):
+    def _get_cloud(self):
         with self._lock:
-            return self._cloud
+            return self._cloud_api
 
     # ------------------------------------------------------------------
     def sync_devices(self, force: bool = False) -> list[dict]:
@@ -188,12 +188,12 @@ class TuyaAdapter:
             return self.list_devices()
         if not force and time.time() - self._last_sync < 8:
             return self.list_devices()
-        cloud = self._cloud()
+        cloud = self._get_cloud()
         if cloud is None:
             err = self._connect_cloud()
             if err:
                 return self.list_devices()
-            cloud = self._cloud()
+            cloud = self._get_cloud()
         try:
             raw = cloud.getdevices()
             devices_in = raw if isinstance(raw, list) else (raw.get("result") or raw.get("devices") or [])
@@ -400,7 +400,7 @@ class TuyaAdapter:
                 log.info("LAN command failed, falling back to cloud: %s", exc)
 
         if used is None:
-            cloud = self._cloud()
+            cloud = self._get_cloud()
             if cloud is None:
                 raise RuntimeError(last_err or "Tuya Cloud not connected")
             payload = {"commands": commands}
