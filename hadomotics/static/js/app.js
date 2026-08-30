@@ -1050,8 +1050,9 @@ function fitFloorPlan() {
 
   container.style.transform = "none";
 
-  const availableWidth = wrapper.clientWidth - 24;
-  const availableHeight = wrapper.clientHeight - 24;
+  const kiosk = document.body.classList.contains("view-mode-active");
+  const availableWidth = wrapper.clientWidth - (kiosk ? 16 : 24);
+  const availableHeight = wrapper.clientHeight - (kiosk ? 96 : 24);
 
   if (availableWidth <= 0 || availableHeight <= 0) return;
 

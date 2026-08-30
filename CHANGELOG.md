@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.1.0
+
+### Changed
+- **Immersive kiosk View Mode**  
+  Full-bleed floor plan on a dark canvas. Floor tabs and Edit sit in a floating glass dock at the bottom. Entities render as circular glowing orbs using their on/off colors. Labels are hidden in View Mode; live state chips remain. Edit Mode layout is unchanged.
+
+### Fixed
+- Floor plan scaling in View Mode leaves space for the bottom dock so the plan is not covered.
+
 ## 3.0.1
 
 ### Fixed
