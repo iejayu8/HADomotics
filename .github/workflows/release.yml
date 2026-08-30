@@ -59,7 +59,7 @@ jobs:
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: HADomotics ${{ steps.ver.outputs.version }}
-          body_file: /tmp/release_notes.md
+          body_path: /tmp/release_notes.md
           draft: false
           prerelease: false
           generate_release_notes: true
