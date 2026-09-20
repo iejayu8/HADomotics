@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.2.0
+
+### Added
+- **Bulk On/Off colors (Edit Mode)**  
+  Sidebar section to pick Color On / Color Off and apply them to every element on the current floor, or to all elements on all floors, without editing one by one.
+
 ## 3.1.0
 
 ### Changed

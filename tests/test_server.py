@@ -694,6 +694,122 @@ def test_update_element_all_fields(client):
         assert el[key] == val
 
 
+def test_bulk_update_colors_floor_only(client):
+    f1 = client.post(
+        "/api/floors",
+        data=json.dumps({"name": "One"}),
+        content_type="application/json",
+    ).get_json()
+    f2 = client.post(
+        "/api/floors",
+        data=json.dumps({"name": "Two"}),
+        content_type="application/json",
+    ).get_json()
+    a = client.post(
+        f"/api/floors/{f1['id']}/elements",
+        data=json.dumps({"label": "a", "color_on": "#111111", "color_off": "#222222"}),
+        content_type="application/json",
+    ).get_json()
+    b = client.post(
+        f"/api/floors/{f2['id']}/elements",
+        data=json.dumps({"label": "b", "color_on": "#111111", "color_off": "#222222"}),
+        content_type="application/json",
+    ).get_json()
+
+    resp = client.put(
+        "/api/elements/colors",
+        data=json.dumps({
+            "color_on": "#FFAA00",
+            "color_off": "#333333",
+            "scope": "floor",
+            "floor_id": f1["id"],
+        }),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["updated"] == 1
+
+    floor1 = client.get(f"/api/floors/{f1['id']}").get_json()
+    floor2 = client.get(f"/api/floors/{f2['id']}").get_json()
+    el1 = next(e for e in floor1["elements"] if e["id"] == a["id"])
+    el2 = next(e for e in floor2["elements"] if e["id"] == b["id"])
+    assert el1["color_on"] == "#FFAA00"
+    assert el1["color_off"] == "#333333"
+    assert el2["color_on"] == "#111111"
+    assert el2["color_off"] == "#222222"
+
+
+def test_bulk_update_colors_all_floors(client):
+    f1 = client.post(
+        "/api/floors",
+        data=json.dumps({"name": "One"}),
+        content_type="application/json",
+    ).get_json()
+    f2 = client.post(
+        "/api/floors",
+        data=json.dumps({"name": "Two"}),
+        content_type="application/json",
+    ).get_json()
+    client.post(
+        f"/api/floors/{f1['id']}/elements",
+        data=json.dumps({"label": "a"}),
+        content_type="application/json",
+    )
+    client.post(
+        f"/api/floors/{f1['id']}/elements",
+        data=json.dumps({"label": "a2"}),
+        content_type="application/json",
+    )
+    client.post(
+        f"/api/floors/{f2['id']}/elements",
+        data=json.dumps({"label": "b"}),
+        content_type="application/json",
+    )
+
+    resp = client.put(
+        "/api/elements/colors",
+        data=json.dumps({
+            "color_on": "#00FF00",
+            "color_off": "#0000FF",
+            "scope": "all",
+        }),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["updated"] == 3
+
+    for fid in (f1["id"], f2["id"]):
+        floor = client.get(f"/api/floors/{fid}").get_json()
+        for el in floor["elements"]:
+            assert el["color_on"] == "#00FF00"
+            assert el["color_off"] == "#0000FF"
+
+
+def test_bulk_update_colors_invalid(client):
+    resp = client.put(
+        "/api/elements/colors",
+        data=json.dumps({"color_on": "red", "scope": "all"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+    resp = client.put(
+        "/api/elements/colors",
+        data=json.dumps({"color_on": "#FFFFFF", "scope": "floor"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+    resp = client.put(
+        "/api/elements/colors",
+        data=json.dumps({"color_on": "#FFFFFF", "scope": "floor", "floor_id": "missing"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # HA proxy endpoints
 # ---------------------------------------------------------------------------

@@ -148,6 +148,51 @@ function saveElementProps(e) {
     .catch((err) => toast(`Error saving: ${err.message}`, "error"));
 }
 
+async function applyBulkColors(scope) {
+  const colorOn = $("bulkColorOn")?.value;
+  const colorOff = $("bulkColorOff")?.value;
+  if (!colorOn || !colorOff) return;
+
+  if (scope === "floor") {
+    if (!currentFloor) {
+      toast("Selecciona una planta primero", "warn");
+      return;
+    }
+    const n = (currentFloor.elements || []).length;
+    if (n === 0) {
+      toast("Esta planta no tiene elementos", "warn");
+      return;
+    }
+    if (!confirm(`¿Aplicar estos colores a los ${n} elementos de "${currentFloor.name}"?`)) return;
+  } else {
+    if (!confirm("¿Aplicar estos colores a TODOS los elementos de todas las plantas?")) return;
+  }
+
+  try {
+    const result = await apiFetch("/api/elements/colors", {
+      method: "PUT",
+      body: JSON.stringify({
+        color_on: colorOn,
+        color_off: colorOff,
+        scope,
+        floor_id: currentFloor ? currentFloor.id : undefined,
+      }),
+    });
+    if (currentFloor) {
+      await selectFloor(currentFloor.id);
+    }
+    if (currentElement) {
+      $("propColorOn").value = colorOn;
+      $("propColorOff").value = colorOff;
+      currentElement.color_on = colorOn;
+      currentElement.color_off = colorOff;
+    }
+    toast(`Colores aplicados a ${result.updated} elemento(s)`, "success");
+  } catch (err) {
+    toast(`Error applying colors: ${err.message}`, "error");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Floor list rendering
 // ---------------------------------------------------------------------------
@@ -646,6 +691,10 @@ function setViewMode(enabled) {
   if (backupSection) {
     backupSection.style.display = enabled ? "none" : "block";
   }
+  const bulkColorsSection = $("bulkColorsSection");
+  if (bulkColorsSection) {
+    bulkColorsSection.style.display = enabled ? "none" : "block";
+  }
 
   if (enabled) {
     if (pendingPlacement) {
@@ -914,6 +963,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         toast(`Error duplicating: ${err.message}`, "error");
       }
     });
+  }
+
+  const btnApplyColorsFloor = $("btnApplyColorsFloor");
+  if (btnApplyColorsFloor) {
+    btnApplyColorsFloor.addEventListener("click", () => applyBulkColors("floor"));
+  }
+  const btnApplyColorsAll = $("btnApplyColorsAll");
+  if (btnApplyColorsAll) {
+    btnApplyColorsAll.addEventListener("click", () => applyBulkColors("all"));
   }
 
   const exportBtn = $("btnExportConfig");

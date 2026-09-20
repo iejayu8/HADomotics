@@ -72,6 +72,7 @@ _EXT_MAP: dict[str, str] = {
 
 import re as _re
 _SAFE_ID_RE = _re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+_HEX_COLOR_RE = _re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 app = Flask(__name__, static_folder="static")
 CORS(app)
@@ -496,6 +497,46 @@ def delete_element(floor_id: str, element_id: str):
         return jsonify({"error": "Element not found"}), 404
     save_config(config)
     return jsonify({"ok": True})
+
+
+@app.route("/api/elements/colors", methods=["PUT"])
+def bulk_update_element_colors():
+    data = request.get_json(force=True) or {}
+    color_on = data.get("color_on")
+    color_off = data.get("color_off")
+    scope = data.get("scope", "floor")
+    floor_id = data.get("floor_id")
+
+    if color_on is None and color_off is None:
+        return jsonify({"error": "color_on or color_off required"}), 400
+    if color_on is not None and not _HEX_COLOR_RE.match(str(color_on)):
+        return jsonify({"error": "Invalid color_on"}), 400
+    if color_off is not None and not _HEX_COLOR_RE.match(str(color_off)):
+        return jsonify({"error": "Invalid color_off"}), 400
+    if scope not in ("floor", "all"):
+        return jsonify({"error": "scope must be 'floor' or 'all'"}), 400
+    if scope == "floor" and not floor_id:
+        return jsonify({"error": "floor_id required when scope is floor"}), 400
+
+    config = load_config()
+    if scope == "floor":
+        floor = get_floor(config, floor_id)
+        if floor is None:
+            return jsonify({"error": "Floor not found"}), 404
+        targets = [floor]
+    else:
+        targets = config.get("floors", [])
+
+    updated = 0
+    for floor in targets:
+        for el in floor.get("elements", []):
+            if color_on is not None:
+                el["color_on"] = color_on
+            if color_off is not None:
+                el["color_off"] = color_off
+            updated += 1
+    save_config(config)
+    return jsonify({"ok": True, "updated": updated})
 
 
 @app.route("/api/ha/states", methods=["GET"])

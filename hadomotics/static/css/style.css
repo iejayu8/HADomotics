@@ -218,6 +218,31 @@ body.view-mode-active .ha-conn-indicator-fixed {
   padding: 0 16px 8px;
 }
 
+.bulk-colors {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 16px 12px;
+}
+
+.bulk-colors .form-group-row > div {
+  flex: 1;
+}
+
+.bulk-colors input[type="color"] {
+  width: 100%;
+}
+
+.bulk-colors .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+body.view-mode-active #bulkColorsSection,
+body.view-mode-active #backupSection {
+  display: none !important;
+}
+
 .editor-area {
   flex: 1;
   display: flex;
