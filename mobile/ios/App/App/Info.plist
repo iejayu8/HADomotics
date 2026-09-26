@@ -45,5 +45,13 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>HADomotics necesita una foto del plano de la casa.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>HADomotics puede guardar una copia del plano.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>HADomotics puede hacer una foto del plano.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
