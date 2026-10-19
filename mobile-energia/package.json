@@ -1,0 +1,19 @@
+{
+  "name": "hadomotics-energia-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prototipo HADomotics + Carga/Solar/Bater\u00eda (cliente fino de HA)",
+  "scripts": {
+    "www": "python3 ../scripts/sync_energia_www.py",
+    "sync": "python3 ../scripts/sync_energia_www.py && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/status-bar": "^6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}

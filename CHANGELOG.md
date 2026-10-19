@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Panel Energía** (`/energia`, botón ⚡ Energía en el dock): pantallas Coche/Carga, Solar/Inversor y Batería.
+  Cliente fino de Home Assistant: datos en vivo (ABRP, Helios, decisión/motivo, cargador Deye, inversor y batería Deye/Solarman),
+  sin guardar ni calcular datos sincronizados.
+- API `GET /api/energy/map`, `GET /api/energy/state`, `POST /api/energy/control` (lista blanca de controles deliberados,
+  validación de rango/opciones con los atributos de HA, `dry_run`).
+- `mobile-energia/`: app Capacitor (Android/iOS) con el mismo panel en modo directo (websocket de HA), modo prueba por defecto.
+
 ## 3.2.0
 
 ### Added

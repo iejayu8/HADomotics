@@ -703,6 +703,49 @@ def restore_config():
     return jsonify({"ok": True, "message": "Configuration restored successfully"})
 
 
+# ---------------------------------------------------------------------------
+# Energía: Carga Tesla + Solar/Inversor + Batería (cliente fino de HA)
+# ---------------------------------------------------------------------------
+from energy import create_blueprint as _energy_blueprint  # noqa: E402
+
+
+def _energy_get_state(entity_id: str):
+    with _state_lock:
+        cached = _state_cache.get(entity_id)
+    if cached or not HA_TOKEN:
+        return cached
+    try:
+        resp = requests.get(f"{HA_BASE_URL}/states/{entity_id}", headers=ha_headers(), timeout=10)
+        return resp.json() if resp.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def _energy_all_states() -> list:
+    with _state_lock:
+        if _state_cache:
+            return list(_state_cache.values())
+    if not HA_TOKEN:
+        return []
+    try:
+        resp = requests.get(f"{HA_BASE_URL}/states", headers=ha_headers(), timeout=10)
+        data = resp.json()
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+app.register_blueprint(_energy_blueprint(
+    static_dir=Path(app.static_folder),
+    get_state=_energy_get_state,
+    get_all_states=_energy_all_states,
+    is_ws_connected=lambda: _ha_ws_connected,
+    ha_base_url=lambda: HA_BASE_URL,
+    ha_headers=ha_headers,
+    has_token=lambda: bool(HA_TOKEN),
+))
+
+
 _start_ha_ws_thread()
 
 if __name__ == "__main__":

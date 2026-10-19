@@ -29,3 +29,5 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+mobile-energia/node_modules/
+mobile-energia/android/

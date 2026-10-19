@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>HADomotics · Energía</title>
+<link rel="stylesheet" href="css/energy.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">HADomotics <span>Energía</span></div>
+  <div class="conn" id="conn" title="Conexión"><span class="dot"></span><span id="connText">Desconectado</span></div>
+  <button class="icon-btn" id="btnSettings" aria-label="Ajustes">⚙</button>
+</header>
+<div class="banner" id="dryBanner">MODO PRUEBA (dry-run): los controles NO envían nada a Home Assistant; solo registran la llamada.</div>
+<main id="screens"></main>
+<nav class="tabs" id="tabs"></nav>
+
+<div class="sheet hidden" id="settings">
+  <div class="sheet-body">
+    <h2>Ajustes</h2>
+    <p class="muted" id="modeInfo"></p>
+    <div id="directFields">
+      <label>URL de Home Assistant<input id="haUrl" type="url" placeholder="https://xxxx.ui.nabu.casa"></label>
+      <label>Token de acceso de larga duración<input id="haToken" type="password" autocomplete="off" placeholder="(se guarda solo en este dispositivo)"></label>
+    </div>
+    <label class="row"><input id="dryRun" type="checkbox"> Modo prueba (dry-run): no enviar servicios</label>
+    <div class="actions">
+      <button id="btnSave" class="primary">Guardar y conectar</button>
+      <button id="btnClose">Cerrar</button>
+    </div>
+    <h3>Registro de llamadas</h3>
+    <pre id="callLog" class="log"></pre>
+  </div>
+</div>
+
+<div class="sheet hidden" id="confirm">
+  <div class="sheet-body small">
+    <p id="confirmText"></p>
+    <div class="actions"><button id="confirmYes" class="primary">Confirmar</button><button id="confirmNo">Cancelar</button></div>
+  </div>
+</div>
+<div class="toast hidden" id="toast"></div>
+
+<script src="js/transport.js"></script>
+<script src="js/energy.js"></script>
+</body>
+</html>
