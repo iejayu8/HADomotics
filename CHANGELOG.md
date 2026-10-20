@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.3.0
+
+### Security
+- **Host port 8099 is no longer published.** The panel is served through Home Assistant ingress. A client on the LAN can no longer call Home Assistant with the add-on's Supervisor token.
+- **Direct access is off unless you turn it on.** The `allow_direct_access` option accepts `Authorization: Bearer <Home Assistant long-lived access token>`. The token is checked with Home Assistant, and service calls are made as that user. Assign a host port on the add-on Network page as well; the port stays unmapped until you do.
+- **CORS is not a wildcard.** Cross-origin browser calls are refused unless direct access is on and `cors_origins` lists that exact origin. `*` is ignored.
+- **The service proxy is an allowlist.** Floor-plan actions are forwarded (`<entity domain>.toggle`, cover open/close/position, and the other device services the editor offers, including `light.turn_on`, `scene.turn_on`, and `script.turn_on`). Administrative calls such as `homeassistant.restart`, `shell_command`, and `hassio.*` are rejected.
+- Ingress is trusted only from the Supervisor address `172.30.32.2`, and only with the user id the Supervisor adds. Spoofed `X-Forwarded-For` or `X-Remote-User-*` headers from anywhere else are ignored. Any signed-in user can read floor plans (so the Lovelace card works). Editing and the service proxy require a Home Assistant administrator (the `system-admin` group, or the older `is_admin` flag).
+- Inside the ingress panel, live state and device actions use the signed-in Home Assistant user when the frontend is available, so those actions follow that user's permissions.
+
+### Migration
+- Bookmarks, wall tablets, and phone apps that opened `http://<home-assistant>:8099` directly will not connect. Open **HADomotics** in the Home Assistant sidebar instead.
+- Lovelace: set `addon_url` to the ingress path `/api/hassio_ingress/<token>`. Open the sidebar panel and copy the path after the hostname. Administrators may leave `addon_url` empty or keep an old `:8099` URL; the card asks the Supervisor for the ingress path. Other users need the ingress path saved on the card.
+- The sidebar entry is visible to every logged-in user. Only administrators can edit the plan or use the add-on service proxy. Device taps on the Lovelace card still go through Home Assistant as the signed-in user.
+- Private direct clients (off by default): enable **Allow direct access**, set a host port under **Network**, create a long-lived access token, and send `Authorization: Bearer <token>`. For a browser on another origin, set **CORS origins** to that origin, for example `http://homeassistant.local:8123`.
+
+### Fixed
+- Server tests follow the single default floor (`floor1`) instead of removed `floor2` / `garden` entries.
+- Home Assistant proxy tests change the live token the server reads, and the state cache is cleared between tests so results do not depend on order.
+
 ## 3.2.0
 
 ### Added

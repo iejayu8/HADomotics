@@ -16,6 +16,7 @@ RUN chmod a+x /run.sh
 # Create data directory
 RUN mkdir -p /data/images
 
+# Listen port inside the container. Host publishing is config.yaml (`8099/tcp: null`).
 EXPOSE 8099
 
 # Use the standard HA addon startup script.

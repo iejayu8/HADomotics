@@ -1,6 +1,6 @@
 name: HADomotics
 description: Interactive home floor plan for Home Assistant - manage buttons, lights, sensors and more with a visual domotics interface.
-version: "3.2.0"
+version: "3.3.0"
 slug: hadomotics
 init: false
 arch:
@@ -11,16 +11,27 @@ arch:
 homeassistant_api: true
 ingress: true
 ingress_port: 8099
+# Ingress stays available to every logged-in user so the Lovelace card can
+# load floor plans. Editor routes and the service proxy still require a
+# Home Assistant administrator (enforced in server.py).
+panel_admin: false
 panel_icon: mdi:floor-plan
 panel_title: HADomotics
 ports:
-  8099/tcp: 8099
+  # null = do not publish on the host. Ingress uses ingress_port inside the
+  # add-on network. Set a host port under Network only together with
+  # allow_direct_access.
+  8099/tcp: null
 ports_description:
-  8099/tcp: HADomotics web interface
+  8099/tcp: Optional direct access. Not published by default. Requires Allow direct access and a Home Assistant token.
 map:
   - config:rw
   - share:rw
 options:
   log_level: info
+  allow_direct_access: false
+  cors_origins: ""
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
+  allow_direct_access: bool?
+  cors_origins: str?

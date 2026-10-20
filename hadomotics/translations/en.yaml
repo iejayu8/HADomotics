@@ -2,3 +2,16 @@ configuration:
   log_level:
     name: Log Level
     description: Set the log verbosity for the HADomotics addon.
+  allow_direct_access:
+    name: Allow direct access
+    description: >-
+      Off by default. When enabled, a client that is not Home Assistant
+      ingress may call the add-on with a Home Assistant long-lived access
+      token (Authorization: Bearer). The host port stays unpublished until
+      you set one on the Network page. Prefer ingress instead.
+  cors_origins:
+    name: CORS origins
+    description: >-
+      Comma-separated browser origins allowed when direct access is on,
+      for example http://homeassistant.local:8123. Leave empty to refuse
+      cross-origin browser calls. A wildcard (*) is ignored.

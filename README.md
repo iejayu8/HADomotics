@@ -1,6 +1,16 @@
 HADomotics is a project structured into multiple components, including a backend module, a custom Lovelace card, and a test suite. This repository contains the source code, configuration files, and development assets for the project.
 
-Latest addon version: 3.2.0
+Latest addon version: 3.3.0
+
+**Access**
+
+The panel is part of Home Assistant (ingress). Host port **8099 is not published**. Do not point browsers or phone apps at `http://<home-assistant>:8099`; that URL is closed so the add-on cannot call Home Assistant services without a login.
+
+- **Sidebar:** open HADomotics in Home Assistant. Every logged-in user can load the panel. Only an administrator can edit floors or use the add-on's service proxy. Device taps use the signed-in user when the panel is embedded in Home Assistant.
+- **Lovelace card:** set `addon_url` to `/api/hassio_ingress/<token>` (copy the path from the sidebar panel). Administrators can leave it empty and the card will look the path up. Actions on the card go through Home Assistant (`hass.callService`), not the add-on proxy.
+- **Direct access (off by default):** in the add-on configuration enable **Allow direct access**, then on the Network page set a host port. Call the API with `Authorization: Bearer <long-lived access token>`. The token is checked with Home Assistant, and service calls run as that user. For a browser on another origin, set **CORS origins** to the exact origin (a wildcard is ignored).
+
+Service calls through the add-on are limited to floor-plan controls (toggle, cover position, lights, scenes, scripts, and the other device services listed in `hadomotics/server.py`). `homeassistant.restart`, shell commands, and similar administrative services are rejected.
 
 **Repository Structure**
 
