@@ -10,12 +10,15 @@
  *
  *   type: custom:hadomotics-card
  *   title: My Home
- *   addon_url: http://homeassistant.local:8099
+ *   addon_url: /api/hassio_ingress/<ingress-token>
  *   default_floor: floor1
  *
- * The `addon_url` should point to the running HADomotics addon.
- * If the addon is accessed via HA ingress, set `addon_url` to the
- * ingress path (e.g. /api/hassio_ingress/<slug>).
+ * `addon_url` should be the add-on's ingress path. Open HADomotics in the
+ * sidebar and copy the path after the host (it starts with
+ * /api/hassio_ingress/). Administrators may leave addon_url empty or keep
+ * a legacy http://host:8099 value; the card will ask the Supervisor for
+ * the ingress path. Device actions use the signed-in Home Assistant user
+ * (hass.callService), not the add-on service proxy.
  */
 
 /* ============================================================
@@ -293,6 +296,10 @@ class HADomoticsCard extends HTMLElement {
     this._statePollingInterval = null;
     this._attached = false;
     this._editMode = false;
+    this._configReady = false;
+    this._accessMode = "none";
+    this._addonBase = "";
+    this._imageObjectUrl = "";
 
     this.attachShadow({ mode: "open" });
     this._render();
@@ -303,19 +310,20 @@ class HADomoticsCard extends HTMLElement {
   set hass(hass) {
     const prev = this._hass;
     this._hass = hass;
+    if (!prev && this._configReady) {
+      this._loadFloors();
+      return;
+    }
     if (!prev || JSON.stringify(this._getRelevantStates(prev)) !== JSON.stringify(this._getRelevantStates(hass))) {
       this._updateElementStates();
     }
   }
 
   setConfig(config) {
-    if (!config.addon_url && !config.addon_path) {
-      throw new Error("HADomotics: addon_url is required");
-    }
-    this._config = config;
-    this._addonBase = (config.addon_url || "").replace(/\/$/, "");
+    this._config = config || {};
+    this._configReady = true;
     this._render();
-    this._loadFloors();
+    if (this._hass) this._loadFloors();
   }
 
   getCardSize() {
@@ -331,6 +339,10 @@ class HADomoticsCard extends HTMLElement {
     if (this._statePollingInterval) {
       clearInterval(this._statePollingInterval);
       this._statePollingInterval = null;
+    }
+    if (this._imageObjectUrl) {
+      URL.revokeObjectURL(this._imageObjectUrl);
+      this._imageObjectUrl = "";
     }
   }
 
@@ -407,7 +419,13 @@ class HADomoticsCard extends HTMLElement {
       return;
     }
 
-    const imgSrc = `${this._addonBase}/api/images/${this._currentFloor.image}`;
+    let imgSrc = "";
+    try {
+      imgSrc = await this._floorImageSrc(this._currentFloor.image);
+    } catch (err) {
+      wrapper.innerHTML = `<div class="error-msg">Could not load floor plan image.</div>`;
+      return;
+    }
 
     wrapper.innerHTML = `
       <img class="floor-image" id="floorImg" src="${imgSrc}" alt="${this._escHtml(this._currentFloor.name)}" />`;
@@ -582,10 +600,108 @@ class HADomoticsCard extends HTMLElement {
 
   /* ── Data loading ── */
 
+  _isIngressUrl(url) {
+    if (!url) return false;
+    if (url.startsWith("/")) return true;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      return parsed.pathname.includes("/api/hassio_ingress/");
+    } catch (err) {
+      return false;
+    }
+  }
+
+  _haAccessToken() {
+    const hass = this._hass;
+    if (!hass) return "";
+    return (
+      hass.auth?.data?.access_token ||
+      hass.auth?.accessToken ||
+      hass.connection?.options?.auth?.accessToken ||
+      ""
+    );
+  }
+
+  async _discoverIngressBase() {
+    if (!this._hass || typeof this._hass.callWS !== "function") return "";
+    try {
+      const list = await this._hass.callWS({
+        type: "supervisor/api",
+        endpoint: "/addons",
+        method: "get",
+      });
+      const addons = (list && (list.addons || (list.data && list.data.addons))) || [];
+      const found = addons.find((addon) => {
+        const slug = addon && addon.slug;
+        return slug === "hadomotics" || slug === "local_hadomotics" || (typeof slug === "string" && slug.endsWith("_hadomotics"));
+      });
+      if (!found) return "";
+      const info = await this._hass.callWS({
+        type: "supervisor/api",
+        endpoint: `/addons/${found.slug}/info`,
+        method: "get",
+      });
+      const entry = info && (info.ingress_entry || (info.data && info.data.ingress_entry));
+      return entry ? String(entry).replace(/\/$/, "") : "";
+    } catch (err) {
+      console.debug("HADomotics: ingress discovery unavailable", err);
+      return "";
+    }
+  }
+
+  async _resolveAddonBase() {
+    const configured = (this._config.addon_url || this._config.addon_path || "").trim().replace(/\/$/, "");
+    if (this._isIngressUrl(configured)) {
+      return { base: configured, mode: "ingress" };
+    }
+    const discovered = await this._discoverIngressBase();
+    if (discovered) {
+      if (configured) {
+        console.info("HADomotics: using ingress instead of the direct addon URL");
+      }
+      return { base: discovered, mode: "ingress" };
+    }
+    if (configured) return { base: configured, mode: "direct" };
+    return { base: "", mode: "none" };
+  }
+
+  async _addonFetch(path) {
+    const headers = {};
+    const opts = { headers, credentials: "same-origin" };
+    if (this._accessMode === "direct") {
+      const token = this._haAccessToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      opts.credentials = "omit";
+    }
+    return fetch(`${this._addonBase}${path}`, opts);
+  }
+
+  async _floorImageSrc(imageName) {
+    const path = `/api/images/${encodeURIComponent(imageName)}`;
+    if (this._accessMode !== "direct") {
+      return `${this._addonBase}${path}`;
+    }
+    const res = await this._addonFetch(path);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    if (this._imageObjectUrl) URL.revokeObjectURL(this._imageObjectUrl);
+    this._imageObjectUrl = URL.createObjectURL(blob);
+    return this._imageObjectUrl;
+  }
+
   async _loadFloors() {
     const wrapper = this.shadowRoot.getElementById("canvasWrapper");
+    const resolved = await this._resolveAddonBase();
+    this._addonBase = resolved.base;
+    this._accessMode = resolved.mode;
+    if (!this._addonBase) {
+      if (wrapper) {
+        wrapper.innerHTML = `<div class="error-msg">Set addon_url to the ingress path <code>/api/hassio_ingress/&lt;token&gt;</code>.<br>Open HADomotics in the sidebar and copy that path. Direct port 8099 is not published.</div>`;
+      }
+      return;
+    }
     try {
-      const res = await fetch(`${this._addonBase}/api/floors`);
+      const res = await this._addonFetch(`/api/floors`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       this._floors = await res.json();
       this._renderFloors();
@@ -603,13 +719,16 @@ class HADomoticsCard extends HTMLElement {
       await this._selectFloor(target ? target.id : this._floors[0].id);
     } catch (err) {
       console.error("HADomotics: could not load floors", err);
-      if (wrapper) wrapper.innerHTML = `<div class="error-msg">Could not connect to HADomotics addon.<br>Check that addon_url is correct: <code>${this._escHtml(this._addonBase)}</code></div>`;
+      const hint = this._accessMode === "direct"
+        ? "Direct access is off unless the add-on option Allow direct access is enabled, the host port is set, and this browser is allowed by CORS origins."
+        : "Check that the ingress path is current.";
+      if (wrapper) wrapper.innerHTML = `<div class="error-msg">Could not connect to HADomotics.<br>${this._escHtml(hint)}<br><code>${this._escHtml(this._addonBase)}</code></div>`;
     }
   }
 
   async _selectFloor(floorId) {
     try {
-      const res = await fetch(`${this._addonBase}/api/floors/${floorId}`);
+      const res = await this._addonFetch(`/api/floors/${encodeURIComponent(floorId)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       this._currentFloor = await res.json();
       this._renderFloors();  // update active tab
@@ -684,7 +803,8 @@ class HADomoticsCardEditor extends HTMLElement {
         </div>
         <div class="config-row">
           <label>Addon URL</label>
-          <input id="addon_url" value="${this._escHtml(this._config.addon_url || "")}" placeholder="http://homeassistant.local:8099" />
+          <input id="addon_url" value="${this._escHtml(this._config.addon_url || "")}" placeholder="/api/hassio_ingress/<token>" />
+          <small style="color:var(--secondary-text-color)">Ingress path from the HADomotics sidebar. Leave empty to discover it as an administrator. Port 8099 is not published.</small>
         </div>
         <div class="config-row">
           <label>Default Floor ID</label>
@@ -740,7 +860,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HADomotics Card %c v1.0.3 ",
+  "%c HADomotics Card %c v1.1.0 ",
   "background:#1976D2;color:#fff;font-weight:bold;padding:2px 4px;border-radius:3px 0 0 3px",
   "background:#42A5F5;color:#fff;padding:2px 4px;border-radius:0 3px 3px 0"
 );

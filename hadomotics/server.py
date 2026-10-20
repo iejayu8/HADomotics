@@ -1,10 +1,12 @@
 """HADomotics - Home Assistant Domotics Addon Backend."""
 
 import copy
+import hashlib
 import json
 import logging
 import os
 import queue
+import re
 import threading
 import time
 import uuid
@@ -12,15 +14,15 @@ from pathlib import Path
 
 import requests
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory, stream_with_context
-from flask_cors import CORS
 from PIL import Image
 import base64
 from datetime import datetime
 
 try:
-    from websocket import WebSocketApp
+    from websocket import WebSocketApp, create_connection
 except ImportError:  # pragma: no cover
     WebSocketApp = None
+    create_connection = None
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -44,7 +46,18 @@ def _resolve_paths() -> tuple:
 DATA_DIR, IMAGES_DIR, CONFIG_FILE = _resolve_paths()
 
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
-HA_TOKEN = os.environ.get("HA_TOKEN", "") or SUPERVISOR_TOKEN
+# Optional local-dev override. Kept separate from SUPERVISOR_TOKEN so tests
+# (and a rotated supervisor token) can change either value after import.
+HA_TOKEN = os.environ.get("HA_TOKEN", "")
+
+
+def get_ha_token() -> str:
+    """Token the add-on itself uses to call Home Assistant.
+
+    Reads the module globals live. A local HA_TOKEN wins; otherwise the
+    Supervisor token is used.
+    """
+    return (HA_TOKEN or SUPERVISOR_TOKEN or "").strip()
 
 HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 if HA_URL:
@@ -70,12 +83,385 @@ _EXT_MAP: dict[str, str] = {
     ".svg": ".svg",
 }
 
-import re as _re
-_SAFE_ID_RE = _re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
-_HEX_COLOR_RE = _re.compile(r"^#[0-9A-Fa-f]{6}$")
+_SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+_HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+_SERVICE_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+# Supervisor container on the hassio network. Ingress connections originate
+# here and nowhere else — other add-ons share 172.30.32.0/23, so a subnet
+# check would be wrong. Do not trust X-Forwarded-For or X-Remote-User-* from
+# any other peer; those headers are trivial to forge on a published port.
+INGRESS_SOURCE_IP = os.environ.get("INGRESS_SOURCE_IP", "172.30.32.2")
+
+# Domains the floor plan must never invoke. These are administration, code
+# execution, or notification targets rather than device controls.
+BLOCKED_HA_DOMAINS = frozenset({
+    "backup",
+    "camera",
+    "cloud",
+    "command_line",
+    "conversation",
+    "device_tracker",
+    "esphome",
+    "frontend",
+    "hassio",
+    "homeassistant",
+    "logbook",
+    "logger",
+    "mqtt",
+    "notify",
+    "persistent_notification",
+    "pyscript",
+    "python_script",
+    "recorder",
+    "rest_command",
+    "shell_command",
+    "system_log",
+    "template",
+    "update",
+    "zha",
+    "zwave_js",
+})
+
+# Services the panel's custom "call-service" action and cover controls use,
+# beyond the generic "<entity domain>.toggle" tap. Anything else is rejected
+# so the Supervisor token is not a general Home Assistant admin API.
+ALLOWED_HA_SERVICES: dict[str, frozenset[str]] = {
+    "automation": frozenset({"trigger", "turn_on", "turn_off"}),
+    "button": frozenset({"press"}),
+    "climate": frozenset({"set_hvac_mode", "set_preset_mode", "set_temperature", "turn_off", "turn_on"}),
+    "cover": frozenset({
+        "close_cover",
+        "open_cover",
+        "set_cover_position",
+        "set_cover_tilt_position",
+        "stop_cover",
+    }),
+    "fan": frozenset({"set_percentage", "turn_off", "turn_on"}),
+    "humidifier": frozenset({"set_humidity", "turn_off", "turn_on"}),
+    "input_boolean": frozenset({"turn_off", "turn_on"}),
+    "input_button": frozenset({"press"}),
+    "light": frozenset({"turn_off", "turn_on"}),
+    "lock": frozenset({"lock", "unlock"}),
+    "media_player": frozenset({
+        "media_pause",
+        "media_play",
+        "media_play_pause",
+        "media_stop",
+        "turn_off",
+        "turn_on",
+        "volume_down",
+        "volume_mute",
+        "volume_set",
+        "volume_up",
+    }),
+    "remote": frozenset({"send_command", "turn_off", "turn_on"}),
+    "scene": frozenset({"turn_on"}),
+    "script": frozenset({"turn_off", "turn_on"}),
+    "siren": frozenset({"turn_off", "turn_on"}),
+    "switch": frozenset({"turn_off", "turn_on"}),
+    "vacuum": frozenset({"pause", "return_to_base", "start", "start_pause", "stop"}),
+    "valve": frozenset({"close_valve", "open_valve", "set_valve_position"}),
+}
+
+_TOKEN_CACHE_OK_TTL = 60.0
+_TOKEN_CACHE_BAD_TTL = 15.0
+_ADMIN_CACHE_OK_TTL = 60.0
+_ADMIN_CACHE_BAD_TTL = 5.0
 
 app = Flask(__name__, static_folder="static")
-CORS(app)
+
+_token_cache: dict[str, tuple[float, bool]] = {}
+_token_cache_lock = threading.Lock()
+_admin_cache: tuple[float, set[str] | None] | None = None
+_admin_cache_lock = threading.Lock()
+
+
+def _addon_options() -> dict:
+    path = DATA_DIR / "options.json"
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _env_or_option_flag(env_name: str, option_key: str, default: bool = False) -> bool:
+    raw = os.environ.get(env_name)
+    if raw is not None and raw.strip() != "":
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    value = _addon_options().get(option_key, default)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def direct_access_enabled() -> bool:
+    """Direct (non-ingress) access is off unless the add-on option is set."""
+    return _env_or_option_flag("ALLOW_DIRECT_ACCESS", "allow_direct_access", False)
+
+
+def _configured_cors_origins() -> set[str]:
+    raw = os.environ.get("CORS_ORIGINS")
+    if raw is None:
+        raw = _addon_options().get("cors_origins") or ""
+    origins = set()
+    for part in str(raw).split(","):
+        item = part.strip().rstrip("/")
+        if item and item != "*":
+            origins.add(item)
+    return origins
+
+
+def _peer_ip() -> str:
+    ip = request.remote_addr or ""
+    if ip.startswith("::ffff:"):
+        return ip[len("::ffff:"):]
+    return ip
+
+
+def _is_ingress_peer() -> bool:
+    return _peer_ip() == INGRESS_SOURCE_IP
+
+
+def _ingress_user_id() -> str:
+    if not _is_ingress_peer():
+        return ""
+    return (request.headers.get("X-Remote-User-Id") or "").strip()
+
+
+def _user_api_base() -> str:
+    """Home Assistant API for calls authenticated as an end user.
+
+    The Supervisor proxy at http://supervisor/core/api accepts the add-on
+    token, not a long-lived user token. User tokens are checked against
+    Home Assistant itself.
+    """
+    if HA_URL:
+        return f"{HA_URL}/api"
+    return os.environ.get("HA_CORE_URL", "http://homeassistant:8123/api").rstrip("/")
+
+
+def _bearer_token() -> str:
+    header = request.headers.get("Authorization", "")
+    if not header.lower().startswith("bearer "):
+        return ""
+    token = header[7:].strip()
+    if not token or len(token) > 4096:
+        return ""
+    return token
+
+
+def _probe_ha_token(token: str) -> int | None:
+    try:
+        resp = requests.get(
+            f"{_user_api_base()}/",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
+            allow_redirects=False,
+        )
+        return resp.status_code
+    except Exception as exc:
+        log.warning("Home Assistant token check failed: %s", exc)
+        return None
+
+
+def _ha_token_is_valid(token: str) -> bool:
+    if not token:
+        return False
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    now = time.monotonic()
+    with _token_cache_lock:
+        hit = _token_cache.get(digest)
+        if hit and hit[0] > now:
+            return hit[1]
+    status = _probe_ha_token(token)
+    if status is None:
+        return False
+    ok = status == 200
+    ttl = _TOKEN_CACHE_OK_TTL if ok else _TOKEN_CACHE_BAD_TTL
+    with _token_cache_lock:
+        _token_cache[digest] = (now + ttl, ok)
+        if len(_token_cache) > 256:
+            expired = [key for key, (exp, _) in _token_cache.items() if exp <= now]
+            for key in expired:
+                _token_cache.pop(key, None)
+    return ok
+
+
+def _user_record_is_admin(user: dict) -> bool:
+    """Home Assistant admin flag across core versions.
+
+    Older cores set ``is_admin``. Current cores omit it and put administrators
+    in the ``system-admin`` group (owners are administrators too).
+    """
+    if user.get("is_admin") is True or user.get("is_owner") is True:
+        return True
+    groups = user.get("group_ids") or []
+    return "system-admin" in groups
+
+
+def _fetch_admin_user_ids() -> set[str] | None:
+    """Return Home Assistant administrator user ids, or None if unknown."""
+    token = get_ha_token()
+    if create_connection is None or not token:
+        log.warning("Cannot resolve Home Assistant admins (no websocket or token)")
+        return None
+    ws = None
+    try:
+        ws = create_connection(HA_WS_URL, timeout=5)
+        hello = json.loads(ws.recv())
+        if hello.get("type") != "auth_required":
+            log.warning("Unexpected HA websocket hello: %s", hello.get("type"))
+            return None
+        ws.send(json.dumps({"type": "auth", "access_token": token}))
+        auth = json.loads(ws.recv())
+        if auth.get("type") != "auth_ok":
+            log.warning("HA admin lookup was not accepted")
+            return None
+        ws.send(json.dumps({"id": 1, "type": "config/auth/list"}))
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            msg = json.loads(ws.recv())
+            if msg.get("type") == "result" and msg.get("id") == 1:
+                if not msg.get("success"):
+                    log.warning("HA admin lookup rejected")
+                    return None
+                users = msg.get("result") or []
+                return {
+                    user.get("id")
+                    for user in users
+                    if isinstance(user, dict) and user.get("id") and _user_record_is_admin(user)
+                }
+        log.warning("HA admin lookup timed out")
+        return None
+    except Exception as exc:
+        log.warning("HA admin lookup failed: %s", exc)
+        return None
+    finally:
+        if ws is not None:
+            try:
+                ws.close()
+            except Exception:
+                pass
+
+
+def _cached_admin_ids() -> set[str] | None:
+    global _admin_cache
+    now = time.monotonic()
+    with _admin_cache_lock:
+        if _admin_cache and _admin_cache[0] > now:
+            return _admin_cache[1]
+    ids = _fetch_admin_user_ids()
+    ttl = _ADMIN_CACHE_OK_TTL if ids is not None else _ADMIN_CACHE_BAD_TTL
+    with _admin_cache_lock:
+        _admin_cache = (now + ttl, ids)
+    return ids
+
+
+def ingress_user_is_admin(user_id: str) -> bool:
+    """True when this ingress user is a Home Assistant administrator.
+
+    Fails closed when the user id is missing or Home Assistant cannot be asked.
+    The header is only consulted for the Supervisor peer.
+    """
+    if not user_id:
+        return False
+    admins = _cached_admin_ids()
+    return bool(admins and user_id in admins)
+
+
+def _service_allowed(domain: str, service: str) -> bool:
+    if not _SERVICE_RE.match(domain) or not _SERVICE_RE.match(service):
+        return False
+    if domain in BLOCKED_HA_DOMAINS:
+        return False
+    # Default tap action on the floor plan is "<entity domain>.toggle".
+    if service == "toggle":
+        return True
+    allowed = ALLOWED_HA_SERVICES.get(domain)
+    return bool(allowed and service in allowed)
+
+
+def _request_origin() -> str:
+    return (request.headers.get("Origin") or "").strip().rstrip("/")
+
+
+def _apply_cors(resp):
+    origin = _request_origin()
+    allowed = _configured_cors_origins()
+    if direct_access_enabled() and origin and origin in allowed:
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Vary"] = "Origin"
+        resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        resp.headers["Access-Control-Max-Age"] = "600"
+    elif resp.headers.get("Access-Control-Allow-Origin") == "*":
+        del resp.headers["Access-Control-Allow-Origin"]
+    return resp
+
+
+# Floor-plan reads the Lovelace card needs. Writes, backups, and every
+# Home Assistant proxy route stay administrator-only.
+_READ_ONLY_EXACT = {"/", "/index.html", "/api/floors"}
+
+
+def _ingress_read_only(method: str, path: str) -> bool:
+    if method != "GET":
+        return False
+    if path in _READ_ONLY_EXACT:
+        return True
+    if path.startswith("/static/"):
+        return True
+    if path.startswith("/api/images/"):
+        return True
+    if path.startswith("/api/floors/"):
+        return True
+    return False
+
+
+def _authorize_request():
+    if _is_ingress_peer():
+        if _ingress_read_only(request.method, request.path):
+            return None
+        user_id = _ingress_user_id()
+        if ingress_user_is_admin(user_id):
+            return None
+        log.warning(
+            "Rejected non-admin ingress %s %s from %s",
+            request.method,
+            request.path,
+            _peer_ip(),
+        )
+        return jsonify({"error": "Administrator access required"}), 403
+
+    if direct_access_enabled() and _ha_token_is_valid(_bearer_token()):
+        return None
+
+    log.warning(
+        "Rejected unauthenticated %s %s from %s",
+        request.method,
+        request.path,
+        _peer_ip(),
+    )
+    return jsonify({"error": "Authentication required"}), 401
+
+
+@app.before_request
+def _auth_gate():
+    if request.method == "OPTIONS":
+        origin = _request_origin()
+        if direct_access_enabled() and origin and origin in _configured_cors_origins():
+            resp = app.make_response(("", 204))
+            return _apply_cors(resp)
+        return jsonify({"error": "Origin not allowed"}), 403
+    return _authorize_request()
+
+
+@app.after_request
+def _cors_after(resp):
+    return _apply_cors(resp)
 
 # ---------------------------------------------------------------------------
 # HA WebSocket state cache + SSE clients
@@ -139,7 +525,7 @@ def _ha_ws_on_message(ws, message: str) -> None:
     msg_type = data.get("type")
 
     if msg_type == "auth_required":
-        ws.send(json.dumps({"type": "auth", "access_token": HA_TOKEN}))
+        ws.send(json.dumps({"type": "auth", "access_token": get_ha_token()}))
         return
 
     if msg_type == "auth_ok":
@@ -202,7 +588,7 @@ def _run_ha_websocket_once() -> None:
         log.error("websocket-client not installed; cannot open HA WebSocket")
         time.sleep(10)
         return
-    if not HA_TOKEN:
+    if not get_ha_token():
         log.debug("No HA token; skipping WebSocket connect")
         time.sleep(5)
         return
@@ -267,8 +653,26 @@ def get_floor(config: dict, floor_id: str):
     return next((f for f in config["floors"] if f["id"] == floor_id), None)
 
 
-def ha_headers() -> dict:
-    return {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+def ha_headers(token: str | None = None) -> dict:
+    used = get_ha_token() if token is None else token
+    return {"Authorization": f"Bearer {used}", "Content-Type": "application/json"}
+
+
+def _call_as_user() -> bool:
+    """Direct-access requests must use the caller's own Home Assistant token."""
+    return direct_access_enabled() and not _is_ingress_peer()
+
+
+def _api_base_for_request() -> str:
+    if _call_as_user():
+        return _user_api_base()
+    return HA_BASE_URL
+
+
+def _token_for_request() -> str:
+    if _call_as_user():
+        return _bearer_token()
+    return get_ha_token()
 
 
 @app.route("/")
@@ -541,16 +945,25 @@ def bulk_update_element_colors():
 
 @app.route("/api/ha/states", methods=["GET"])
 def ha_states():
-    with _state_lock:
-        if _state_cache:
-            return jsonify(list(_state_cache.values()))
+    # The in-memory cache is filled with the Supervisor token and contains
+    # every entity. Only ingress (administrator) callers may see it.
+    if not _call_as_user():
+        with _state_lock:
+            if _state_cache:
+                return jsonify(list(_state_cache.values()))
 
-    if not HA_TOKEN:
+    token = _token_for_request()
+    if not token:
         return jsonify([])
     try:
-        resp = requests.get(f"{HA_BASE_URL}/states", headers=ha_headers(), timeout=10)
+        resp = requests.get(
+            f"{_api_base_for_request()}/states",
+            headers=ha_headers(token),
+            timeout=10,
+            allow_redirects=False,
+        )
         data = resp.json()
-        if isinstance(data, list):
+        if isinstance(data, list) and not _call_as_user():
             _set_states_bulk(data)
         return jsonify(data)
     except Exception as exc:
@@ -560,6 +973,11 @@ def ha_states():
 
 @app.route("/api/ha/stream")
 def ha_stream():
+    # The stream replays the Supervisor-token cache. Direct tokens must not
+    # subscribe to it; they can poll /api/ha/states with their own token.
+    if not _is_ingress_peer():
+        return jsonify({"error": "State stream is available through ingress only"}), 403
+
     def event_stream():
         q = queue.Queue(maxsize=200)
         with _sse_lock:
@@ -594,15 +1012,22 @@ def ha_stream():
 
 @app.route("/api/ha/states/<entity_id>", methods=["GET"])
 def ha_state(entity_id: str):
-    with _state_lock:
-        cached = _state_cache.get(entity_id)
-    if cached:
-        return jsonify(cached)
+    if not _call_as_user():
+        with _state_lock:
+            cached = _state_cache.get(entity_id)
+        if cached:
+            return jsonify(cached)
 
-    if not HA_TOKEN:
+    token = _token_for_request()
+    if not token:
         return jsonify({"error": "No supervisor token"}), 503
     try:
-        resp = requests.get(f"{HA_BASE_URL}/states/{entity_id}", headers=ha_headers(), timeout=10)
+        resp = requests.get(
+            f"{_api_base_for_request()}/states/{entity_id}",
+            headers=ha_headers(token),
+            timeout=10,
+            allow_redirects=False,
+        )
         return jsonify(resp.json()), resp.status_code
     except Exception as exc:
         log.warning("Could not fetch HA state for %s: %s", entity_id, exc)
@@ -611,15 +1036,24 @@ def ha_state(entity_id: str):
 
 @app.route("/api/ha/services/<domain>/<service>", methods=["POST"])
 def ha_call_service(domain: str, service: str):
-    if not HA_TOKEN:
+    domain = (domain or "").lower()
+    service = (service or "").lower()
+    if not _service_allowed(domain, service):
+        log.warning("Blocked HA service %s.%s from %s", domain, service, _peer_ip())
+        return jsonify({"error": "Service is not allowed"}), 403
+    token = _token_for_request()
+    if not token:
         return jsonify({"error": "No supervisor token"}), 503
     try:
         data = request.get_json(force=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"error": "JSON object required"}), 400
         resp = requests.post(
-            f"{HA_BASE_URL}/services/{domain}/{service}",
-            headers=ha_headers(),
+            f"{_api_base_for_request()}/services/{domain}/{service}",
+            headers=ha_headers(token),
             json=data,
             timeout=10,
+            allow_redirects=False,
         )
         return jsonify(resp.json()), resp.status_code
     except Exception as exc:
@@ -703,9 +1137,15 @@ def restore_config():
     return jsonify({"ok": True, "message": "Configuration restored successfully"})
 
 
-_start_ha_ws_thread()
-
 if __name__ == "__main__":
+    _start_ha_ws_thread()
     log.info("Starting HADomotics server on port 8099")
-    log.info("HA_BASE_URL=%s | HA_WS_URL=%s | token configured=%s", HA_BASE_URL, HA_WS_URL, bool(HA_TOKEN))
+    log.info(
+        "HA_BASE_URL=%s | HA_WS_URL=%s | token configured=%s | direct_access=%s | ingress_peer=%s",
+        HA_BASE_URL,
+        HA_WS_URL,
+        bool(get_ha_token()),
+        direct_access_enabled(),
+        INGRESS_SOURCE_IP,
+    )
     app.run(host="0.0.0.0", port=8099, debug=False, threaded=True)

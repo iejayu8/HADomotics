@@ -77,6 +77,36 @@ async function apiFetch(path, options = {}) {
   return res.json();
 }
 
+/** Home Assistant frontend, when this panel is shown inside ingress. */
+function embeddedHass() {
+  try {
+    if (!window.parent || window.parent === window) return null;
+    const root = window.parent.document.querySelector("home-assistant");
+    if (root && root.hass) return root.hass;
+  } catch (err) {
+    // Not embedded, or the parent frame is not readable.
+  }
+  return null;
+}
+
+/**
+ * Device actions go through the signed-in Home Assistant user when the panel
+ * is inside ingress, so they follow that user's permissions. The add-on
+ * service proxy is only the fallback (administrator ingress, or direct
+ * access with a token).
+ */
+async function callAddonOrHass(domain, service, data) {
+  const hass = embeddedHass();
+  if (hass && typeof hass.callService === "function") {
+    await hass.callService(domain, service, data || {});
+    return;
+  }
+  await apiFetch(`/api/ha/services/${domain}/${service}`, {
+    method: "POST",
+    body: JSON.stringify(data || {}),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Dynamic form fields + Element properties
 // ---------------------------------------------------------------------------
@@ -478,8 +508,25 @@ async function fetchEntityStates() {
   }
 }
 
+function pullParentStates() {
+  const hass = embeddedHass();
+  if (!hass || !hass.states) {
+    setHaConnectionStatus(false);
+    return;
+  }
+  entityStates = hass.states;
+  updateElementStates();
+  setHaConnectionStatus(hass.connected !== false);
+}
+
 function startStatePolling() {
   stopStatePolling();
+  // Inside ingress the frontend already holds live entity state for this user.
+  if (embeddedHass()) {
+    pullParentStates();
+    statePollingTimer = setInterval(pullParentStates, 1000);
+    return;
+  }
   fetchEntityStates();
 
   try {
@@ -547,9 +594,9 @@ function showQuickPositionModal(el) {
     btn.onclick = async () => {
       hide(modal);
       try {
-        await apiFetch(`/api/ha/services/cover/set_cover_position`, {
-          method: "POST",
-          body: JSON.stringify({ entity_id: el.entity_id, position: pos }),
+        await callAddonOrHass("cover", "set_cover_position", {
+          entity_id: el.entity_id,
+          position: pos,
         });
         await fetchEntityStates();
         toast(`Cover set to ${pos}%`, "success");
@@ -595,9 +642,9 @@ async function handleElementTap(el, overlayEl) {
   try {
     if (action === "set_position") {
       const position = parseInt(el.position) || 50;
-      await apiFetch(`/api/ha/services/cover/set_cover_position`, {
-        method: "POST",
-        body: JSON.stringify({ entity_id: el.entity_id, position }),
+      await callAddonOrHass("cover", "set_cover_position", {
+        entity_id: el.entity_id,
+        position,
       });
     }
     else if (action === "quick-position") {
@@ -622,17 +669,11 @@ async function handleElementTap(el, overlayEl) {
       if (!data.entity_id && el.entity_id) {
         data.entity_id = el.entity_id;
       }
-      await apiFetch(`/api/ha/services/${domain}/${serviceName}`, {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      await callAddonOrHass(domain, serviceName, data);
     }
     else {
       const [domain] = el.entity_id.split(".");
-      await apiFetch(`/api/ha/services/${domain}/toggle`, {
-        method: "POST",
-        body: JSON.stringify({ entity_id: el.entity_id }),
-      });
+      await callAddonOrHass(domain, "toggle", { entity_id: el.entity_id });
     }
 
     await fetchEntityStates();

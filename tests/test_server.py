@@ -52,11 +52,56 @@ def tmp_data(tmp_path):
 
 
 @pytest.fixture()
-def client(tmp_data):
+def client(tmp_data, monkeypatch):
+    """Authenticated Home Assistant ingress request from an administrator."""
+    from unittest.mock import patch
     import server as srv
+
+    monkeypatch.setenv("ALLOW_DIRECT_ACCESS", "false")
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    srv._state_cache.clear()
+    srv._token_cache.clear()
+    srv._admin_cache = None
+    srv.app.config["TESTING"] = True
+    with patch.object(srv, "ingress_user_is_admin", return_value=True):
+        with srv.app.test_client() as c:
+            c.environ_base["REMOTE_ADDR"] = srv.INGRESS_SOURCE_IP
+            c.environ_base["HTTP_X_REMOTE_USER_ID"] = "admin-user"
+            yield c
+
+
+@pytest.fixture()
+def lan_client(tmp_data, monkeypatch):
+    """A direct client, as if the host port were reachable from the LAN."""
+    import server as srv
+
+    monkeypatch.setenv("ALLOW_DIRECT_ACCESS", "false")
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    srv._state_cache.clear()
+    srv._token_cache.clear()
+    srv._admin_cache = None
     srv.app.config["TESTING"] = True
     with srv.app.test_client() as c:
+        c.environ_base["REMOTE_ADDR"] = "192.168.1.50"
         yield c
+
+
+@pytest.fixture()
+def ingress_member(tmp_data, monkeypatch):
+    """Ingress session for a non-administrator Home Assistant user."""
+    from unittest.mock import patch
+    import server as srv
+
+    monkeypatch.setenv("ALLOW_DIRECT_ACCESS", "false")
+    srv._state_cache.clear()
+    srv._token_cache.clear()
+    srv._admin_cache = None
+    srv.app.config["TESTING"] = True
+    with patch.object(srv, "ingress_user_is_admin", return_value=False):
+        with srv.app.test_client() as c:
+            c.environ_base["REMOTE_ADDR"] = srv.INGRESS_SOURCE_IP
+            c.environ_base["HTTP_X_REMOTE_USER_ID"] = "family-user"
+            yield c
 
 
 # ---------------------------------------------------------------------------
@@ -65,14 +110,12 @@ def client(tmp_data):
 
 
 def test_list_floors_default(client):
-    """Default config has three floors."""
+    """Default config is the single built-in floor."""
     resp = client.get("/api/floors")
     assert resp.status_code == 200
     floors = resp.get_json()
     ids = [f["id"] for f in floors]
-    assert "floor1" in ids
-    assert "floor2" in ids
-    assert "garden" in ids
+    assert ids == ["floor1"]
 
 
 def test_create_floor(client):
@@ -550,7 +593,7 @@ def test_delete_image_floor_not_found(client):
 
 def test_delete_image_no_image_set(client):
     """Deleting image from a floor that has none should still return 200."""
-    resp = client.delete("/api/floors/floor2/image")
+    resp = client.delete("/api/floors/floor1/image")
     assert resp.status_code == 200
     assert resp.get_json()["ok"] is True
 
@@ -815,39 +858,45 @@ def test_bulk_update_colors_invalid(client):
 # ---------------------------------------------------------------------------
 
 
+class _Tokens:
+    def __init__(self, supervisor="", ha=""):
+        import server as srv
+
+        self.srv = srv
+        self.saved = (srv.HA_TOKEN, srv.SUPERVISOR_TOKEN)
+        srv.HA_TOKEN = ha
+        srv.SUPERVISOR_TOKEN = supervisor
+        srv._state_cache.clear()
+
+    def close(self):
+        self.srv.HA_TOKEN, self.srv.SUPERVISOR_TOKEN = self.saved
+        self.srv._state_cache.clear()
+
+
 def test_ha_states_no_token(client):
     """Without a supervisor token the endpoint returns an empty list."""
-    import server as srv
-
-    original = srv.SUPERVISOR_TOKEN
-    srv.SUPERVISOR_TOKEN = ""
+    tokens = _Tokens()
     try:
         resp = client.get("/api/ha/states")
         assert resp.status_code == 200
         assert resp.get_json() == []
     finally:
-        srv.SUPERVISOR_TOKEN = original
+        tokens.close()
 
 
 def test_ha_state_no_token(client):
     """Without a supervisor token the endpoint returns 503."""
-    import server as srv
-
-    original = srv.SUPERVISOR_TOKEN
-    srv.SUPERVISOR_TOKEN = ""
+    tokens = _Tokens()
     try:
         resp = client.get("/api/ha/states/light.kitchen")
         assert resp.status_code == 503
     finally:
-        srv.SUPERVISOR_TOKEN = original
+        tokens.close()
 
 
 def test_ha_call_service_no_token(client):
     """Without a supervisor token the endpoint returns 503."""
-    import server as srv
-
-    original = srv.SUPERVISOR_TOKEN
-    srv.SUPERVISOR_TOKEN = ""
+    tokens = _Tokens()
     try:
         resp = client.post(
             "/api/ha/services/light/turn_on",
@@ -856,16 +905,14 @@ def test_ha_call_service_no_token(client):
         )
         assert resp.status_code == 503
     finally:
-        srv.SUPERVISOR_TOKEN = original
+        tokens.close()
 
 
 def test_ha_states_with_token(client):
     """With a token, states are fetched from the HA API (mocked)."""
     from unittest.mock import patch, MagicMock
-    import server as srv
 
-    original = srv.SUPERVISOR_TOKEN
-    srv.SUPERVISOR_TOKEN = "fake-token"
+    tokens = _Tokens(supervisor="fake-token")
     mock_resp = MagicMock()
     mock_resp.json.return_value = [{"entity_id": "light.kitchen", "state": "on"}]
     try:
@@ -876,32 +923,28 @@ def test_ha_states_with_token(client):
             assert states[0]["entity_id"] == "light.kitchen"
             mock_get.assert_called_once()
     finally:
-        srv.SUPERVISOR_TOKEN = original
+        tokens.close()
 
 
 def test_ha_states_network_error(client):
     """A network error should return an empty list gracefully."""
     from unittest.mock import patch
-    import server as srv
 
-    original = srv.SUPERVISOR_TOKEN
-    srv.SUPERVISOR_TOKEN = "fake-token"
+    tokens = _Tokens(supervisor="fake-token")
     try:
         with patch("server.requests.get", side_effect=Exception("timeout")):
             resp = client.get("/api/ha/states")
             assert resp.status_code == 200
             assert resp.get_json() == []
     finally:
-        srv.SUPERVISOR_TOKEN = original
+        tokens.close()
 
 
 def test_ha_state_with_token(client):
     """With a token, a single entity state is proxied from HA (mocked)."""
     from unittest.mock import patch, MagicMock
-    import server as srv
 
-    original = srv.SUPERVISOR_TOKEN
-    srv.SUPERVISOR_TOKEN = "fake-token"
+    tokens = _Tokens(supervisor="fake-token")
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"entity_id": "light.kitchen", "state": "off"}
     mock_resp.status_code = 200
@@ -911,31 +954,27 @@ def test_ha_state_with_token(client):
             assert resp.status_code == 200
             assert resp.get_json()["state"] == "off"
     finally:
-        srv.SUPERVISOR_TOKEN = original
+        tokens.close()
 
 
 def test_ha_state_network_error(client):
     """A network error on entity state should return 503."""
     from unittest.mock import patch
-    import server as srv
 
-    original = srv.SUPERVISOR_TOKEN
-    srv.SUPERVISOR_TOKEN = "fake-token"
+    tokens = _Tokens(supervisor="fake-token")
     try:
         with patch("server.requests.get", side_effect=Exception("timeout")):
             resp = client.get("/api/ha/states/light.kitchen")
             assert resp.status_code == 503
     finally:
-        srv.SUPERVISOR_TOKEN = original
+        tokens.close()
 
 
 def test_ha_call_service_with_token(client):
     """With a token, services are called via the HA API (mocked)."""
     from unittest.mock import patch, MagicMock
-    import server as srv
 
-    original = srv.SUPERVISOR_TOKEN
-    srv.SUPERVISOR_TOKEN = "fake-token"
+    tokens = _Tokens(supervisor="fake-token")
     mock_resp = MagicMock()
     mock_resp.json.return_value = []
     mock_resp.status_code = 200
@@ -948,17 +987,17 @@ def test_ha_call_service_with_token(client):
             )
             assert resp.status_code == 200
             mock_post.assert_called_once()
+            auth = mock_post.call_args.kwargs["headers"]["Authorization"]
+            assert auth == "Bearer fake-token"
     finally:
-        srv.SUPERVISOR_TOKEN = original
+        tokens.close()
 
 
 def test_ha_call_service_network_error(client):
     """A network error calling a service should return 503."""
     from unittest.mock import patch
-    import server as srv
 
-    original = srv.SUPERVISOR_TOKEN
-    srv.SUPERVISOR_TOKEN = "fake-token"
+    tokens = _Tokens(supervisor="fake-token")
     try:
         with patch("server.requests.post", side_effect=Exception("timeout")):
             resp = client.post(
@@ -968,4 +1007,378 @@ def test_ha_call_service_network_error(client):
             )
             assert resp.status_code == 503
     finally:
-        srv.SUPERVISOR_TOKEN = original
+        tokens.close()
+
+
+# ---------------------------------------------------------------------------
+# Authentication, CORS, and the service allowlist
+# ---------------------------------------------------------------------------
+
+
+def _service_post(client, domain, service, payload=None, headers=None):
+    return client.post(
+        f"/api/ha/services/{domain}/{service}",
+        data=json.dumps(payload if payload is not None else {"entity_id": "cover.garage"}),
+        content_type="application/json",
+        headers=headers,
+    )
+
+
+def test_lan_service_call_is_rejected(lan_client):
+    """An unauthenticated direct client cannot open a cover (or call anything)."""
+    from unittest.mock import patch
+
+    with patch("server.requests.post") as mock_post:
+        resp = _service_post(lan_client, "cover", "open_cover")
+    assert resp.status_code == 401
+    assert resp.get_json()["error"] == "Authentication required"
+    mock_post.assert_not_called()
+
+
+def test_lan_cannot_spoof_ingress_identity(lan_client):
+    """Forwarded headers do not make a LAN client look like Supervisor ingress."""
+    from unittest.mock import patch
+
+    headers = {
+        "X-Remote-User-Id": "admin-user",
+        "X-Remote-User-Name": "admin",
+        "X-Forwarded-For": "172.30.32.2",
+        "X-Ingress-Path": "/api/hassio_ingress/abc",
+    }
+    with patch("server.requests.post") as mock_post:
+        resp = _service_post(lan_client, "cover", "open_cover", headers=headers)
+    assert resp.status_code == 401
+    mock_post.assert_not_called()
+    assert resp.headers.get("Access-Control-Allow-Origin") != "*"
+
+
+def test_lan_cannot_read_states_or_floors(lan_client):
+    from unittest.mock import patch
+
+    with patch("server.requests.get") as mock_get:
+        states = lan_client.get("/api/ha/states")
+        floors = lan_client.get("/api/floors")
+    assert states.status_code == 401
+    assert floors.status_code == 401
+    mock_get.assert_not_called()
+
+
+def test_ingress_admin_can_call_allowed_service(client):
+    from unittest.mock import patch, MagicMock
+
+    tokens = _Tokens(supervisor="supervisor-secret")
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = []
+    mock_resp.status_code = 200
+    try:
+        with patch("server.requests.post", return_value=mock_resp) as mock_post:
+            resp = _service_post(client, "cover", "open_cover")
+        assert resp.status_code == 200
+        mock_post.assert_called_once()
+        assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer supervisor-secret"
+        assert mock_post.call_args.args[0].endswith("/services/cover/open_cover")
+    finally:
+        tokens.close()
+
+
+def test_ingress_admin_blocks_unlisted_services(client):
+    from unittest.mock import patch
+
+    with patch("server.requests.post") as mock_post:
+        restart = _service_post(client, "homeassistant", "restart", {})
+        shell = _service_post(client, "shell_command", "reboot", {})
+        weird = _service_post(client, "light", "destroy_world", {})
+    assert restart.status_code == 403
+    assert shell.status_code == 403
+    assert weird.status_code == 403
+    mock_post.assert_not_called()
+
+
+def test_ingress_allows_floorplan_toggle_and_cover_position(client):
+    from unittest.mock import patch, MagicMock
+
+    tokens = _Tokens(supervisor="supervisor-secret")
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = []
+    mock_resp.status_code = 200
+    try:
+        with patch("server.requests.post", return_value=mock_resp) as mock_post:
+            toggle = _service_post(client, "light", "toggle", {"entity_id": "light.kitchen"})
+            position = _service_post(
+                client,
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.garage", "position": 100},
+            )
+            custom = _service_post(client, "plant", "toggle", {"entity_id": "plant.fern"})
+        assert toggle.status_code == 200
+        assert position.status_code == 200
+        assert custom.status_code == 200
+        assert mock_post.call_count == 3
+    finally:
+        tokens.close()
+
+
+def test_ingress_non_admin_can_read_floors_but_not_call_services(ingress_member):
+    from unittest.mock import patch
+
+    floors = ingress_member.get("/api/floors")
+    assert floors.status_code == 200
+    assert floors.get_json()[0]["id"] == "floor1"
+
+    with patch("server.requests.post") as mock_post:
+        service = _service_post(ingress_member, "cover", "open_cover")
+    assert service.status_code == 403
+    assert service.get_json()["error"] == "Administrator access required"
+    mock_post.assert_not_called()
+
+    created = ingress_member.post(
+        "/api/floors",
+        data=json.dumps({"name": "Secret"}),
+        content_type="application/json",
+    )
+    assert created.status_code == 403
+    states = ingress_member.get("/api/ha/states")
+    assert states.status_code == 403
+
+
+def test_ingress_without_user_header_is_not_admin(tmp_data, monkeypatch):
+    """Supervisor peer without X-Remote-User-Id cannot drive services."""
+    import server as srv
+
+    monkeypatch.setenv("ALLOW_DIRECT_ACCESS", "false")
+    srv.app.config["TESTING"] = True
+    with srv.app.test_client() as c:
+        c.environ_base["REMOTE_ADDR"] = srv.INGRESS_SOURCE_IP
+        floors = c.get("/api/floors")
+        service = _service_post(c, "cover", "open_cover")
+    assert floors.status_code == 200
+    assert service.status_code == 403
+
+
+def test_direct_access_disabled_rejects_bearer_token(lan_client):
+    from unittest.mock import patch
+
+    with patch("server.requests.get") as mock_get, patch("server.requests.post") as mock_post:
+        resp = _service_post(
+            lan_client,
+            "cover",
+            "open_cover",
+            headers={"Authorization": "Bearer user-token"},
+        )
+    assert resp.status_code == 401
+    mock_get.assert_not_called()
+    mock_post.assert_not_called()
+
+
+def test_direct_access_valid_token_calls_ha_as_that_user(lan_client, monkeypatch):
+    from unittest.mock import patch, MagicMock
+    import server as srv
+
+    monkeypatch.setenv("ALLOW_DIRECT_ACCESS", "true")
+    tokens = _Tokens(supervisor="supervisor-secret")
+    seen = {}
+
+    def fake_get(url, headers=None, timeout=None, allow_redirects=None):
+        seen["validate_url"] = url
+        seen["validate_auth"] = headers["Authorization"]
+        resp = MagicMock()
+        resp.status_code = 200
+        return resp
+
+    def fake_post(url, headers=None, json=None, timeout=None, allow_redirects=None):
+        seen["post_url"] = url
+        seen["post_auth"] = headers["Authorization"]
+        seen["body"] = json
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = []
+        return resp
+
+    try:
+        with patch("server.requests.get", side_effect=fake_get), patch("server.requests.post", side_effect=fake_post):
+            resp = _service_post(
+                lan_client,
+                "cover",
+                "open_cover",
+                headers={"Authorization": "Bearer user-token"},
+            )
+        assert resp.status_code == 200
+        assert seen["validate_auth"] == "Bearer user-token"
+        assert seen["post_auth"] == "Bearer user-token"
+        assert "supervisor-secret" not in seen["post_auth"]
+        assert seen["post_url"].endswith("/services/cover/open_cover")
+        assert "/supervisor/core/" not in seen["validate_url"]
+        assert seen["body"]["entity_id"] == "cover.garage"
+    finally:
+        tokens.close()
+
+
+def test_direct_access_invalid_token_is_rejected(lan_client, monkeypatch):
+    from unittest.mock import patch, MagicMock
+    import server as srv
+
+    monkeypatch.setenv("ALLOW_DIRECT_ACCESS", "true")
+    bad = MagicMock()
+    bad.status_code = 401
+    with patch("server.requests.get", return_value=bad) as mock_get, patch("server.requests.post") as mock_post:
+        resp = _service_post(
+            lan_client,
+            "cover",
+            "open_cover",
+            headers={"Authorization": "Bearer nope"},
+        )
+    assert resp.status_code == 401
+    mock_get.assert_called_once()
+    mock_post.assert_not_called()
+    # The negative result is cached, so a second attempt does not hit HA again.
+    resp2 = _service_post(
+        lan_client,
+        "cover",
+        "open_cover",
+        headers={"Authorization": "Bearer nope"},
+    )
+    assert resp2.status_code == 401
+    mock_get.assert_called_once()
+    srv._token_cache.clear()
+
+
+def test_cors_rejects_wildcard_and_unknown_origins(lan_client, monkeypatch):
+    monkeypatch.setenv("ALLOW_DIRECT_ACCESS", "true")
+    monkeypatch.setenv("CORS_ORIGINS", "*, https://home.example:8123")
+
+    evil = lan_client.get("/api/floors", headers={"Origin": "https://evil.example"})
+    assert evil.status_code == 401
+    assert evil.headers.get("Access-Control-Allow-Origin") in (None, "")
+
+    preflight = lan_client.open(
+        "/api/ha/services/cover/open_cover",
+        method="OPTIONS",
+        headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert preflight.status_code == 403
+    assert preflight.headers.get("Access-Control-Allow-Origin") != "*"
+
+    allowed = lan_client.get("/api/floors", headers={"Origin": "https://home.example:8123"})
+    assert allowed.headers.get("Access-Control-Allow-Origin") == "https://home.example:8123"
+
+    star = lan_client.open(
+        "/api/floors",
+        method="OPTIONS",
+        headers={"Origin": "*", "Access-Control-Request-Method": "GET"},
+    )
+    assert star.headers.get("Access-Control-Allow-Origin") in (None, "")
+
+
+def test_cors_disabled_when_direct_access_is_off(lan_client, monkeypatch):
+    monkeypatch.setenv("CORS_ORIGINS", "https://home.example:8123")
+    resp = lan_client.get("/api/floors", headers={"Origin": "https://home.example:8123"})
+    assert resp.status_code == 401
+    assert resp.headers.get("Access-Control-Allow-Origin") in (None, "")
+
+
+def test_fetch_admin_user_ids(monkeypatch):
+    import server as srv
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+            self._incoming = [
+                {"type": "auth_required"},
+                {"type": "auth_ok"},
+                {
+                    "id": 1,
+                    "type": "result",
+                    "success": True,
+                    "result": [
+                        {"id": "admin-1", "is_admin": True},
+                        {"id": "user-2", "is_admin": False},
+                    ],
+                },
+            ]
+
+        def recv(self):
+            return json.dumps(self._incoming.pop(0))
+
+        def send(self, payload):
+            self.sent.append(json.loads(payload))
+
+        def close(self):
+            pass
+
+    ws = FakeWS()
+    monkeypatch.setattr(srv, "create_connection", lambda *args, **kwargs: ws)
+    monkeypatch.setattr(srv, "HA_TOKEN", "tok")
+    monkeypatch.setattr(srv, "SUPERVISOR_TOKEN", "")
+    ids = srv._fetch_admin_user_ids()
+    assert ids == {"admin-1"}
+    assert ws.sent[0]["access_token"] == "tok"
+    assert ws.sent[1]["type"] == "config/auth/list"
+
+
+def test_admin_record_accepts_group_and_owner():
+    import server as srv
+
+    assert srv._user_record_is_admin({"id": "a", "is_admin": True}) is True
+    assert srv._user_record_is_admin({"id": "b", "group_ids": ["system-admin"]}) is True
+    assert srv._user_record_is_admin({"id": "c", "is_owner": True, "group_ids": []}) is True
+    assert srv._user_record_is_admin({"id": "d", "group_ids": ["system-users"]}) is False
+    assert srv._user_record_is_admin({"id": "e"}) is False
+
+
+def test_fetch_admin_user_ids_without_is_admin_field(monkeypatch):
+    """HA 2026.10 lists administrators via group_ids, not is_admin."""
+    import server as srv
+
+    class FakeWS:
+        def __init__(self):
+            self._incoming = [
+                {"type": "auth_required"},
+                {"type": "auth_ok"},
+                {
+                    "id": 1,
+                    "type": "result",
+                    "success": True,
+                    "result": [
+                        {"id": "owner", "is_owner": True, "group_ids": ["system-admin"]},
+                        {"id": "family", "is_owner": False, "group_ids": ["system-users"]},
+                    ],
+                },
+            ]
+
+        def recv(self):
+            return json.dumps(self._incoming.pop(0))
+
+        def send(self, payload):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(srv, "create_connection", lambda *args, **kwargs: FakeWS())
+    monkeypatch.setattr(srv, "HA_TOKEN", "tok")
+    monkeypatch.setattr(srv, "SUPERVISOR_TOKEN", "")
+    assert srv._fetch_admin_user_ids() == {"owner"}
+
+
+def test_ingress_admin_check_fails_closed(monkeypatch):
+    import server as srv
+
+    srv._admin_cache = None
+    monkeypatch.setattr(srv, "_fetch_admin_user_ids", lambda: None)
+    assert srv.ingress_user_is_admin("") is False
+    assert srv.ingress_user_is_admin("admin-1") is False
+    srv._admin_cache = None
+
+
+def test_direct_access_option_from_options_file(tmp_data, monkeypatch):
+    import server as srv
+
+    monkeypatch.delenv("ALLOW_DIRECT_ACCESS", raising=False)
+    (srv.DATA_DIR / "options.json").write_text(json.dumps({"allow_direct_access": False}))
+    assert srv.direct_access_enabled() is False
+    (srv.DATA_DIR / "options.json").write_text(json.dumps({"allow_direct_access": True}))
+    assert srv.direct_access_enabled() is True
