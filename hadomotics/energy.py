@@ -24,7 +24,7 @@ MAP_FILE = Path(__file__).resolve().parent / "energy_map.json"
 
 # Servicios permitidos por tipo de control (dominio.servicio).
 _ALLOWED = {
-    "toggle": {"input_boolean.turn_on", "input_boolean.turn_off"},
+    "toggle": {"input_boolean.turn_on", "input_boolean.turn_off", "automation.turn_on", "automation.turn_off"},
     "number": {"input_number.set_value"},
     "select": {"input_select.select_option"},
 }

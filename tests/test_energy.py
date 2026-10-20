@@ -53,7 +53,11 @@ def test_map_entities_and_controls():
     assert "sensor.inverter_battery" in ents
     ctl = energy.controls(m)
     # Solo controles deliberados: helpers de carga. Nunca el cargador ni el inversor.
-    assert all(e.split(".")[0] in ("input_boolean", "input_number", "input_select") for e in ctl)
+    assert all(e.split(".")[0] in ("input_boolean", "input_number", "input_select", "automation") for e in ctl)
+    # Solo los 3 interruptores generales de automatizaciones de carga
+    assert {e for e in ctl if e.startswith("automation.")} == {
+        "automation.carga_coche_dinamica_por_excedente", "automation.carga_coche_programa_nocturno",
+        "automation.carga_coche_toda_la_noche"}
     assert "number.evse_charging_power_limit" not in ctl
     assert not any(e.startswith(("number.inverter", "switch.inverter", "select.inverter")) for e in ctl)
     # Legado eliminado: no debe aparecer
@@ -90,6 +94,8 @@ def test_state_only_mapped(client):
     {"entity_id": "input_number.carga_umbral_solar_kwh", "service": "input_number.set_value", "data": {"value": "x"}},
     {"entity_id": "input_select.carga_dia_lunes", "service": "input_select.select_option", "data": {"option": "oficina"}},
     {"entity_id": "input_boolean.carga_instantanea_tesla", "service": "input_boolean.turn_on", "data": {"x": 1}},
+    {"entity_id": "automation.carga_instantanea_tesla_override", "service": "automation.turn_off"},
+    {"entity_id": "automation.carga_coche_programa_nocturno", "service": "input_boolean.turn_off"},
 ])
 def test_control_rejected(client, body):
     with patch("energy.requests.post") as post:
@@ -114,6 +120,8 @@ def test_control_dry_run_does_not_call(client):
 @pytest.mark.parametrize("body,url,payload", [
     ({"entity_id": "input_boolean.carga_instantanea_tesla", "service": "input_boolean.turn_on"},
      "http://supervisor/core/api/services/input_boolean/turn_on", {"entity_id": "input_boolean.carga_instantanea_tesla"}),
+    ({"entity_id": "automation.carga_coche_programa_nocturno", "service": "automation.turn_off"},
+     "http://supervisor/core/api/services/automation/turn_off", {"entity_id": "automation.carga_coche_programa_nocturno"}),
     ({"entity_id": "input_select.carga_dia_lunes", "service": "input_select.select_option", "data": {"option": "casa"}},
      "http://supervisor/core/api/services/input_select/select_option", {"option": "casa", "entity_id": "input_select.carga_dia_lunes"}),
 ])

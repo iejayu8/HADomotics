@@ -2,6 +2,6 @@
   "appId": "com.hadomotics.energia.dev",
   "appName": "HADomotics Energía",
   "webDir": "www",
-  "server": { "androidScheme": "https" },
-  "android": { "allowMixedContent": false, "webContentsDebuggingEnabled": true }
+  "server": { "androidScheme": "http", "cleartext": true },
+  "android": { "allowMixedContent": true, "webContentsDebuggingEnabled": true }
 }
