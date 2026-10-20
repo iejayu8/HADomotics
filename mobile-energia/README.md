@@ -9,8 +9,12 @@ Es el mismo panel que el add-on sirve en `/energia` (ingress), empaquetado como 
 - Nada sincronizado se guarda ni se calcula en la app. Solo se guardan en el dispositivo la URL de HA,
   el token (credencial) y la preferencia de modo prueba.
 - Editables solo los controles deliberados de `hadomotics/energy_map.json` (helpers `input_boolean` /
-  `input_number` / `input_select` de la carga). Cargador e inversor: solo lectura (los mueven las automatizaciones).
-- **Modo prueba (dry-run)** activado por defecto: los controles registran la llamada y no envían nada.
+  `input_number` / `input_select` de la carga, y `automation.turn_on` / `turn_off` solo de
+  `automation.carga_coche_dinamica_por_excedente`, `automation.carga_coche_programa_nocturno`
+  y `automation.carga_coche_toda_la_noche`). Cargador e inversor: solo lectura.
+- **Modo prueba (dry-run) activado por defecto.** La casilla está en ⚙ Ajustes. Se apaga
+  desmarcándola y pulsando Guardar y conectar. La preferencia queda en el dispositivo
+  (`localStorage` `hadomotics.energy.dryrun` = `0`; cualquier otro valor, o si no existe, lo deja activado).
 
 ## Construir (debug)
 

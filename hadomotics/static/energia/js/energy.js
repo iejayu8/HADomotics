@@ -1,7 +1,8 @@
 /* HADomotics Energía — UI. Cliente fino:
  *  - Todo dato mostrado viene en vivo de HA (ABRP, Helios, decisión/motivo, EVSE, inversor, batería).
  *  - No se persiste ni se calcula ningún dato sincronizado: el estado solo vive en memoria como espejo.
- *  - Solo son editables los controles deliberados del mapa (input_boolean / input_number / input_select).
+ *  - Solo son editables los controles deliberados del mapa (input_boolean / input_number /
+ *    input_select, y automation.turn_on/off de las 3 automatizaciones de carga).
  *  - Sin actualización optimista: el control refleja el valor cuando HA lo confirma. */
 "use strict";
 
@@ -257,9 +258,10 @@
     $("haToken").placeholder = localStorage.getItem(LS.token) ? "•••••• (guardado; vacío = mantener)" : "(se guarda solo en este dispositivo)";
     $("dryRun").checked = dryRun;
     $("directFields").style.display = mode === "direct" ? "" : "none";
-    $("modeInfo").textContent = mode === "direct"
+    const dryHelp = " El modo prueba está activado por defecto. Solo se apaga desmarcando la casilla de abajo y pulsando Guardar y conectar (se recuerda en este navegador).";
+    $("modeInfo").textContent = (mode === "direct"
       ? "Modo directo: la app habla con la API websocket de Home Assistant con tu token."
-      : "Modo add-on: datos y controles pasan por el add-on HADomotics (sesión de HA, sin token propio).";
+      : "Modo add-on: datos y controles pasan por el add-on HADomotics (sesión de HA, sin token propio).") + dryHelp;
     $("settings").classList.remove("hidden");
   }
 
@@ -277,6 +279,7 @@
       if (u) localStorage.setItem(LS.url, u);
       if (t) localStorage.setItem(LS.token, t);
       dryRun = $("dryRun").checked; localStorage.setItem(LS.dry, dryRun ? "1" : "0"); applyDry();
+      if (!dryRun) toast("Modo prueba desactivado: los controles se enviarán a Home Assistant");
       $("settings").classList.add("hidden");
       start();
     };

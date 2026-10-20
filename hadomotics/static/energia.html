@@ -13,7 +13,7 @@
   <div class="conn" id="conn" title="Conexión"><span class="dot"></span><span id="connText">Desconectado</span></div>
   <button class="icon-btn" id="btnSettings" aria-label="Ajustes">⚙</button>
 </header>
-<div class="banner" id="dryBanner">MODO PRUEBA (dry-run): los controles NO envían nada a Home Assistant; solo registran la llamada.</div>
+<div class="banner" id="dryBanner">MODO PRUEBA (dry-run), activado por defecto: los controles no se envían a Home Assistant. Para enviarlos: ⚙ Ajustes → desmarca «Modo prueba (dry-run)» → Guardar y conectar.</div>
 <main id="screens"></main>
 <nav class="tabs" id="tabs"></nav>
 
@@ -25,7 +25,7 @@
       <label>URL de Home Assistant<input id="haUrl" type="url" placeholder="https://xxxx.ui.nabu.casa"></label>
       <label>Token de acceso de larga duración<input id="haToken" type="password" autocomplete="off" placeholder="(se guarda solo en este dispositivo)"></label>
     </div>
-    <label class="row"><input id="dryRun" type="checkbox"> Modo prueba (dry-run): no enviar servicios</label>
+    <label class="row"><input id="dryRun" type="checkbox"> Modo prueba (dry-run): no enviar servicios. Activado por defecto; se recuerda en este navegador.</label>
     <div class="actions">
       <button id="btnSave" class="primary">Guardar y conectar</button>
       <button id="btnClose">Cerrar</button>

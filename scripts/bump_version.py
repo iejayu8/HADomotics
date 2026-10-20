@@ -6,6 +6,7 @@ Source of truth: hadomotics/config.yaml
 Usage:
   python scripts/bump_version.py patch|minor|major
   python scripts/bump_version.py --set 3.1.0
+  python scripts/bump_version.py --set 3.2.1-energia.1   # pre-release, still X.Y.Z-label
   python scripts/bump_version.py --sync          # propagate current config.yaml version
 """
 from __future__ import annotations
@@ -30,11 +31,18 @@ def get_version() -> str:
     return m.group(1).strip()
 
 
+# X.Y.Z or a semver pre-release such as 3.2.1-energia.1.
+# Home Assistant compares these with AwesomeVersion: 3.2.0 < 3.2.1-energia.1 < 3.2.1.
+_VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$")
+
+
 def parse_semver(v: str) -> tuple[int, int, int]:
-    parts = v.split(".")
-    if len(parts) != 3 or not all(p.isdigit() for p in parts):
-        raise SystemExit(f"Invalid semver: {v} (expected X.Y.Z)")
-    return int(parts[0]), int(parts[1]), int(parts[2])
+    m = _VERSION_RE.match(v)
+    if not m:
+        raise SystemExit(
+            f"Invalid semver: {v} (expected X.Y.Z or X.Y.Z-prerelease)"
+        )
+    return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
 
 def bump(v: str, kind: str) -> str:
