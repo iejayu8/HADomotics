@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.4.0
+
+### Added
+- **Una sola instalación, dos sub-apps.** El panel se cambia con los botones inferiores **Dispositivos** y **Energía**. El slug del add-on no cambia: una actualización sustituye a la 3.3.0 y los planos de `/data` se conservan.
+- **HADomotics Dispositivos** es el plano de planta de siempre (modo vista, modo edición, colores en bloque, posición de persianas, cambio de planta, copia de seguridad) con la paleta oscura del panel Energía. El selector de planta y el botón Editar siguen dentro de Dispositivos.
+- **HADomotics Energía** trae Coche/Carga, Solar/Inversor y Batería (cliente fino de Home Assistant: ABRP, Helios, decisión de carga, EVSE, inversor y batería). Los controles editables siguen siendo solo los helpers de carga y los tres interruptores de automatización.
+- **Flujo en vivo** en Energía → Flujo, equivalente a la tarjeta Casa → ENERGÍA: Solar (3 MPPT) → Inversor ↔ Batería (7,6 kWh) ↔ Red, e Inversor → Casa y → Coche. Potencia en W (la red, publicada en kW, se convierte), dirección animada, kWh del día, autarquía diaria y los colores de esa vista. Un dato `unavailable` se muestra como «no disponible» y no mueve la línea.
+- El modo prueba de los controles está **activado por defecto** (`localStorage` `hadomotics.energy.dryrun`; solo el valor `0` lo apaga). Hasta que se desmarca en ⚙ Ajustes, no se llama a ningún servicio.
+
+### Security
+- Las lecturas de Energía (`/energia`, `/api/energy/map`, `/api/energy/state`, `/api/energy/flow`) entran en la lista de lectura del ingress: cualquier usuario que haya iniciado sesión puede verlas.
+- Los controles no usan un `HA_TOKEN` fijado al arrancar. Dentro del panel salen por el usuario de Home Assistant (`hass.callService`). El proxy del add-on solo lo usa un administrador (o el token propio si el acceso directo está activado) y pasa por `get_ha_token()`.
+- Lista blanca ampliada solo con lo que Energía llama de más: `input_number.set_value` e `input_select.select_option`. `input_boolean` y `automation` turn on/off ya estaban. El cargador, el inversor y servicios como `homeassistant.restart` siguen rechazados.
+- `GET /api/ha/stream` sigue siendo solo para administradores. Quien no lo es ve el flujo y los estados por el frontend de Home Assistant o por el sondeo de las lecturas.
+
+### Migration
+- Actualiza el add-on **HADomotics** que ya tienes (mismo repositorio, mismo slug). No hace falta el repositorio de la rama `feature/carga-energia`: esta versión lo sustituye. Si ese add-on de prueba sigue instalado, páralo y desinstálalo; no comparte los planos y no debe quedar escuchando a la vez.
+- Haz una copia de seguridad del add-on antes de actualizar. Los planos no se migran de formato: el JSON de `/data` es el de 3.3.0.
+- El puerto de host 8099 sigue cerrado. Entra por la barra lateral. En Energía, el aviso amarillo significa que los controles están en modo prueba.
+- El gesto vertical entre plantas en modo vista vuelve a estar activo (se había quedado sin oyentes en 3.0.1): desde el centro de Dispositivos, arriba pasa a la planta siguiente y abajo a la anterior.
+
 ## 3.3.0
 
 ### Security

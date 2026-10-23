@@ -1,0 +1,245 @@
+/* HADomotics Energía — scoped to the Energía sub-app */
+#appEnergia {
+  --bg: #0b1220;
+  --card: #131c2e;
+  --line: #22304a;
+  --txt: #e5e7eb;
+  --mut: #94a3b8;
+  --acc: #38bdf8;
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+  background: var(--bg);
+  color: var(--txt);
+  overflow: auto;
+  font: 15px/1.35 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+#appEnergia .energy-top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #111827;
+  border-bottom: 1px solid var(--line);
+}
+#appEnergia .brand { font-weight: 700; flex: 1; }
+#appEnergia .brand span { color: var(--acc); font-weight: 500; }
+#appEnergia .conn { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--mut); }
+#appEnergia .conn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+#appEnergia .conn.on .dot { background: var(--ok); }
+#appEnergia .conn.stale .dot { background: var(--warn); }
+#appEnergia .icon-btn {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--txt);
+  border-radius: 8px;
+  font-size: 18px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+#appEnergia .banner {
+  background: #3b2f0b;
+  color: #fde68a;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-bottom: 1px solid #6b5313;
+}
+#appEnergia .banner.hidden { display: none; }
+#appEnergia .energy-tabs {
+  display: flex;
+  background: #111827;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 46px;
+  z-index: 4;
+}
+#appEnergia .energy-tabs button {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--mut);
+  padding: 10px 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#appEnergia .energy-tabs button .ic { display: block; font-size: 18px; }
+#appEnergia .energy-tabs button.active { color: var(--acc); box-shadow: inset 0 -2px 0 var(--acc); }
+#appEnergia #screens { padding: 12px; max-width: 1200px; margin: 0 auto; width: 100%; }
+#appEnergia .screen { display: none; }
+#appEnergia .screen.active {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+#appEnergia .screen.flow-screen.active { display: block; }
+#appEnergia .card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+#appEnergia .card h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--mut);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+#appEnergia .item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid #1b2740;
+}
+#appEnergia .item:first-of-type { border-top: none; }
+#appEnergia .item .lbl { color: var(--mut); flex: 1; }
+#appEnergia .item .val { font-variant-numeric: tabular-nums; text-align: right; }
+#appEnergia .item.big .val { font-size: 22px; font-weight: 700; }
+#appEnergia .val.unavail { color: var(--warn); font-style: italic; font-size: 14px !important; font-weight: 400 !important; }
+#appEnergia .decision { font-size: 20px; font-weight: 700; padding: 6px 0; }
+#appEnergia .decision.noche { color: #a5b4fc; }
+#appEnergia .decision.sol { color: #fcd34d; }
+#appEnergia .decision.na { color: var(--warn); }
+#appEnergia .motivo { color: var(--txt); opacity: .9; }
+#appEnergia .switch { position: relative; display: inline-block; width: 48px; height: 28px; flex: none; vertical-align: middle; }
+#appEnergia .switch input { opacity: 0; width: 0; height: 0; }
+#appEnergia .switch span { position: absolute; inset: 0; background: #334155; border-radius: 28px; transition: .2s; }
+#appEnergia .switch span:before {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: .2s;
+}
+#appEnergia .switch input:checked + span { background: var(--acc); }
+#appEnergia .switch input:checked + span:before { transform: translateX(20px); }
+#appEnergia .numctl { display: flex; gap: 6px; align-items: center; }
+#appEnergia .numctl input {
+  width: 90px;
+  background: #0f172a;
+  border: 1px solid var(--line);
+  color: var(--txt);
+  border-radius: 8px;
+  padding: 5px 7px;
+  text-align: right;
+}
+#appEnergia .numctl button,
+#appEnergia .seg button {
+  background: #1e293b;
+  border: 1px solid var(--line);
+  color: var(--txt);
+  border-radius: 8px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+#appEnergia .seg { display: flex; border-radius: 8px; overflow: hidden; }
+#appEnergia .seg button { border-radius: 0; }
+#appEnergia .seg button.on { background: var(--acc); color: #04263a; font-weight: 700; }
+#appEnergia .item.today .lbl { color: var(--acc); font-weight: 700; }
+#appEnergia .item.tomorrow .lbl { color: #a5b4fc; font-weight: 700; }
+#appEnergia .sheet {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .55);
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+#appEnergia .sheet.hidden,
+#appEnergia .toast.hidden { display: none; }
+#appEnergia .sheet-body {
+  background: #111827;
+  border: 1px solid var(--line);
+  border-radius: 16px 16px 0 0;
+  padding: 16px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  overflow: auto;
+  margin-bottom: 64px;
+}
+#appEnergia .sheet-body.small { border-radius: 16px; margin-bottom: 30vh; max-width: 420px; }
+#appEnergia .sheet label { display: block; margin: 8px 0; color: var(--mut); }
+#appEnergia .sheet label.row { display: flex; gap: 8px; align-items: center; color: var(--txt); }
+#appEnergia .actions { display: flex; gap: 8px; margin-top: 12px; }
+#appEnergia .actions button {
+  flex: 1;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #1e293b;
+  color: var(--txt);
+  cursor: pointer;
+}
+#appEnergia .actions .primary { background: var(--acc); color: #04263a; font-weight: 700; border: none; }
+#appEnergia .muted { color: var(--mut); }
+#appEnergia .log {
+  background: #020617;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+}
+#appEnergia .toast {
+  position: fixed;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  background: #1e293b;
+  border: 1px solid var(--line);
+  padding: 10px 14px;
+  border-radius: 10px;
+  z-index: 30;
+  max-width: 90%;
+}
+
+/* Power flow */
+#appEnergia .flow {
+  background: #0e1728;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  overflow: auto;
+}
+#appEnergia .flow svg { width: 100%; height: auto; min-width: 720px; display: block; }
+#appEnergia .flow .node-title { font-size: 13px; font-weight: 700; fill: #e5e7eb; }
+#appEnergia .flow .node-sub { font-size: 11px; fill: #94a3b8; }
+#appEnergia .flow .node-val { font-size: 16px; font-weight: 700; fill: #e5e7eb; }
+#appEnergia .flow .unavail { fill: #f59e0b; font-style: italic; font-size: 12px; font-weight: 500; }
+#appEnergia .flow .flow-line { fill: none; stroke-linecap: round; }
+#appEnergia .flow .flow-line.on {
+  stroke-dasharray: 7 9;
+  animation: flow-move 0.9s linear infinite;
+}
+#appEnergia .flow .flow-line.reverse { animation-direction: reverse; }
+@keyframes flow-move { to { stroke-dashoffset: -32; } }
+#appEnergia .flow-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+#appEnergia .flow-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+}

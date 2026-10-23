@@ -1,0 +1,519 @@
+{
+  "version": 1,
+  "screens": [
+    {
+      "id": "coche",
+      "title": "Coche / Carga",
+      "icon": "ev_station",
+      "sections": [
+        {
+          "title": "Decisión esta noche",
+          "kind": "decision",
+          "items": [
+            {
+              "entity": "sensor.carga_decision_noche",
+              "label": "Decisión"
+            },
+            {
+              "entity": "sensor.carga_decision_motivo",
+              "label": "Motivo"
+            }
+          ]
+        },
+        {
+          "title": "Controles",
+          "items": [
+            {
+              "entity": "input_boolean.carga_instantanea_tesla",
+              "label": "Carga instantánea",
+              "control": "toggle",
+              "confirm": true
+            },
+            {
+              "entity": "input_number.carga_instantanea_potencia_w",
+              "label": "Potencia carga instantánea",
+              "control": "number"
+            },
+            {
+              "entity": "input_boolean.carga_coche_toda_la_noche",
+              "label": "Toda la noche (5 kW)",
+              "control": "toggle",
+              "confirm": true
+            },
+            {
+              "entity": "input_boolean.carga_forzar_noche",
+              "label": "Forzar carga esta noche",
+              "control": "toggle"
+            },
+            {
+              "entity": "input_boolean.carga_forzar_no",
+              "label": "Forzar NO cargar",
+              "control": "toggle"
+            },
+            {
+              "entity": "input_boolean.carga_forzar_valle",
+              "label": "Forzar valle (botón notificación)",
+              "control": "toggle"
+            },
+            {
+              "entity": "input_number.carga_umbral_solar_kwh",
+              "label": "Umbral previsión para esperar al sol",
+              "control": "number"
+            }
+          ]
+        },
+        {
+          "title": "Calendario semanal (casa = sol · fuera = noche)",
+          "kind": "calendar",
+          "items": [
+            {
+              "entity": "input_select.carga_dia_lunes",
+              "label": "Lunes",
+              "weekday": 0,
+              "control": "select"
+            },
+            {
+              "entity": "input_select.carga_dia_martes",
+              "label": "Martes",
+              "weekday": 1,
+              "control": "select"
+            },
+            {
+              "entity": "input_select.carga_dia_miercoles",
+              "label": "Miércoles",
+              "weekday": 2,
+              "control": "select"
+            },
+            {
+              "entity": "input_select.carga_dia_jueves",
+              "label": "Jueves",
+              "weekday": 3,
+              "control": "select"
+            },
+            {
+              "entity": "input_select.carga_dia_viernes",
+              "label": "Viernes",
+              "weekday": 4,
+              "control": "select"
+            },
+            {
+              "entity": "input_select.carga_dia_sabado",
+              "label": "Sábado",
+              "weekday": 5,
+              "control": "select"
+            },
+            {
+              "entity": "input_select.carga_dia_domingo",
+              "label": "Domingo",
+              "weekday": 6,
+              "control": "select"
+            }
+          ]
+        },
+        {
+          "title": "Tesla (ABRP)",
+          "items": [
+            {
+              "entity": "sensor.batmovil_state_of_charge",
+              "label": "SoC",
+              "big": true
+            },
+            {
+              "entity": "sensor.batmovil_charging_state",
+              "label": "Estado de carga"
+            },
+            {
+              "entity": "binary_sensor.batmovil_plugged_in",
+              "label": "Enchufado"
+            },
+            {
+              "entity": "device_tracker.batmovil_location",
+              "label": "Ubicación"
+            },
+            {
+              "entity": "sensor.batmovil_charging_power",
+              "label": "Potencia de carga (ABRP)"
+            },
+            {
+              "entity": "sensor.batmovil_charge_energy_added",
+              "label": "Energía añadida"
+            },
+            {
+              "entity": "sensor.batmovil_estimated_range",
+              "label": "Autonomía"
+            },
+            {
+              "entity": "sensor.batmovil_last_update",
+              "label": "Última actualización ABRP",
+              "format": "datetime"
+            }
+          ]
+        },
+        {
+          "title": "Cargador Deye (EVSE)",
+          "items": [
+            {
+              "entity": "sensor.evse_charging_power",
+              "label": "Potencia real",
+              "big": true
+            },
+            {
+              "entity": "number.evse_charging_power_limit",
+              "label": "Límite actual (lo fijan las automatizaciones)"
+            },
+            {
+              "entity": "sensor.evse_charging_operational_state",
+              "label": "Estado"
+            },
+            {
+              "entity": "sensor.evse_charging_control_state",
+              "label": "Control"
+            },
+            {
+              "entity": "select.evse_charging_start_mode",
+              "label": "Modo de inicio"
+            },
+            {
+              "entity": "sensor.evse_today_ev_charge",
+              "label": "Cargado hoy"
+            },
+            {
+              "entity": "binary_sensor.evse_charger_fault",
+              "label": "Fallo cargador"
+            }
+          ]
+        },
+        {
+          "title": "Previsión solar (Helios)",
+          "items": [
+            {
+              "entity": "sensor.helios_forecast_energy_day_1",
+              "label": "Hoy"
+            },
+            {
+              "entity": "sensor.helios_forecast_energy_day_2",
+              "label": "Mañana"
+            },
+            {
+              "entity": "sensor.helios_forecast_energy_day_3",
+              "label": "Día 3"
+            },
+            {
+              "entity": "sensor.helios_forecast_energy_day_4",
+              "label": "Día 4"
+            },
+            {
+              "entity": "sensor.helios_forecast_energy_day_5",
+              "label": "Día 5"
+            }
+          ]
+        },
+        {
+          "title": "Automatizaciones (interruptores generales)",
+          "items": [
+            {
+              "entity": "automation.carga_coche_dinamica_por_excedente",
+              "label": "Auto: Excedente de día",
+              "control": "toggle",
+              "confirm": true
+            },
+            {
+              "entity": "automation.carga_coche_programa_nocturno",
+              "label": "Auto: Programa nocturno 03:30–05:00",
+              "control": "toggle",
+              "confirm": true
+            },
+            {
+              "entity": "automation.carga_coche_toda_la_noche",
+              "label": "Auto: Toda la noche",
+              "control": "toggle",
+              "confirm": true
+            },
+            {
+              "entity": "automation.carga_instantanea_tesla_override",
+              "label": "Carga instantánea (override)"
+            },
+            {
+              "entity": "automation.carga_tesla_aviso_21_00_nuevo",
+              "label": "Aviso 21:00"
+            },
+            {
+              "entity": "input_boolean.carga_coche_sin_excedente",
+              "label": "Sin excedente (estado interno)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "solar",
+      "title": "Solar / Inversor",
+      "icon": "solar_power",
+      "sections": [
+        {
+          "title": "Ahora",
+          "items": [
+            {
+              "entity": "sensor.inverter_pv_power",
+              "label": "Producción FV",
+              "big": true
+            },
+            {
+              "entity": "sensor.inverter_load_power",
+              "label": "Consumo casa",
+              "big": true
+            },
+            {
+              "entity": "sensor.inverter_external_ct1_power",
+              "label": "Red (CT1, + importa / − exporta)",
+              "big": true
+            },
+            {
+              "entity": "sensor.inverter_battery_power",
+              "label": "Batería (+ descarga / − carga)"
+            },
+            {
+              "entity": "sensor.inverter_pv1_power",
+              "label": "String PV1"
+            },
+            {
+              "entity": "sensor.inverter_pv2_power",
+              "label": "String PV2"
+            },
+            {
+              "entity": "sensor.inverter_pv3_power",
+              "label": "String PV3"
+            },
+            {
+              "entity": "sensor.helios_forecast_power_now",
+              "label": "Previsión Helios ahora"
+            }
+          ]
+        },
+        {
+          "title": "Hoy",
+          "items": [
+            {
+              "entity": "sensor.inverter_today_production",
+              "label": "Producido"
+            },
+            {
+              "entity": "sensor.helios_forecast_energy_today_remaining",
+              "label": "Previsión restante"
+            },
+            {
+              "entity": "sensor.inverter_today_load_consumption",
+              "label": "Consumo"
+            },
+            {
+              "entity": "sensor.inverter_today_energy_import",
+              "label": "Importado red"
+            },
+            {
+              "entity": "sensor.inverter_today_energy_export",
+              "label": "Exportado red"
+            }
+          ]
+        },
+        {
+          "title": "Inversor Deye (solo lectura)",
+          "items": [
+            {
+              "entity": "binary_sensor.inverter_connection",
+              "label": "Conexión Solarman"
+            },
+            {
+              "entity": "binary_sensor.inverter_grid",
+              "label": "Red presente"
+            },
+            {
+              "entity": "sensor.inverter_device_state",
+              "label": "Estado"
+            },
+            {
+              "entity": "sensor.inverter_device_alarm",
+              "label": "Alarma"
+            },
+            {
+              "entity": "sensor.inverter_device_fault",
+              "label": "Fallo"
+            },
+            {
+              "entity": "select.inverter_work_mode",
+              "label": "Modo de trabajo"
+            },
+            {
+              "entity": "select.inverter_energy_pattern",
+              "label": "Patrón de energía"
+            },
+            {
+              "entity": "number.inverter_grid_peak_shaving",
+              "label": "Peak shaving red"
+            },
+            {
+              "entity": "sensor.inverter_temperature",
+              "label": "Temperatura"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bateria",
+      "title": "Batería",
+      "icon": "battery_charging_full",
+      "sections": [
+        {
+          "title": "Batería de casa (BYD vía Deye)",
+          "items": [
+            {
+              "entity": "sensor.inverter_battery",
+              "label": "SoC",
+              "big": true
+            },
+            {
+              "entity": "sensor.inverter_battery_power",
+              "label": "Potencia (+ descarga / − carga)",
+              "big": true
+            },
+            {
+              "entity": "sensor.inverter_battery_state",
+              "label": "Estado"
+            },
+            {
+              "entity": "sensor.inverter_battery_voltage",
+              "label": "Tensión"
+            },
+            {
+              "entity": "sensor.inverter_battery_temperature",
+              "label": "Temperatura"
+            },
+            {
+              "entity": "sensor.inverter_battery_capacity",
+              "label": "Capacidad"
+            },
+            {
+              "entity": "sensor.helios_forecast_predicted_battery_state_of_charge",
+              "label": "SoC previsto (Helios)"
+            }
+          ]
+        },
+        {
+          "title": "Hoy",
+          "items": [
+            {
+              "entity": "sensor.inverter_today_battery_charge",
+              "label": "Cargado"
+            },
+            {
+              "entity": "sensor.inverter_today_battery_discharge",
+              "label": "Descargado"
+            }
+          ]
+        },
+        {
+          "title": "Gestión (la fijan las automatizaciones · solo lectura)",
+          "items": [
+            {
+              "entity": "switch.inverter_battery_grid_charging",
+              "label": "Carga desde red"
+            },
+            {
+              "entity": "number.inverter_battery_max_discharging_current",
+              "label": "Descarga máx."
+            },
+            {
+              "entity": "number.inverter_battery_max_charging_current",
+              "label": "Carga máx."
+            },
+            {
+              "entity": "number.inverter_battery_low_soc",
+              "label": "SoC bajo"
+            },
+            {
+              "entity": "number.inverter_battery_shutdown_soc",
+              "label": "SoC apagado"
+            },
+            {
+              "entity": "input_number.carga_backup_descarga_bateria_a",
+              "label": "Descarga a restaurar tras 'toda la noche'"
+            },
+            {
+              "entity": "automation.cargar_baterias_byd_noche",
+              "label": "01:00 cargar desde red (L–V)"
+            },
+            {
+              "entity": "automation.apagar_carga_grid_baterias_byd",
+              "label": "03:30 apagar carga red (L–V)"
+            },
+            {
+              "entity": "automation.apagar_descarga_bateria_noche",
+              "label": "00:00 descarga a 0 A (L–V)"
+            },
+            {
+              "entity": "automation.activar_descarga_bateria",
+              "label": "Reactivar descarga 100 A"
+            },
+            {
+              "entity": "automation.notification_inversor_up",
+              "label": "Aviso inversor caído"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "flow": {
+    "battery_capacity_wh": 7600,
+    "colours": {
+      "solar": "#e0af29",
+      "battery_charge": "#2d8721",
+      "battery_discharge": "#9b2c2c",
+      "grid": "#5c5757",
+      "grid_export": "#11af0e",
+      "grid_off": "#000000",
+      "house": "#b7b3b3",
+      "house_off": "#808080",
+      "aux": "#00b54b",
+      "inverter": "#726e6e"
+    },
+    "entities": {
+      "pv_power": "sensor.inverter_pv_power",
+      "pv1_power": "sensor.inverter_pv1_power",
+      "pv1_voltage": "sensor.inverter_pv1_voltage",
+      "pv1_current": "sensor.inverter_pv1_current",
+      "pv2_power": "sensor.inverter_pv2_power",
+      "pv2_voltage": "sensor.inverter_pv2_voltage",
+      "pv2_current": "sensor.inverter_pv2_current",
+      "pv3_power": "sensor.inverter_pv3_power",
+      "pv3_voltage": "sensor.inverter_pv3_voltage",
+      "pv3_current": "sensor.inverter_pv3_current",
+      "pv_daily": "sensor.inverter_today_production",
+      "battery_soc": "sensor.inverter_battery",
+      "battery_power": "sensor.inverter_battery_power",
+      "battery_state": "sensor.inverter_battery_state",
+      "battery_voltage": "sensor.inverter_battery_voltage",
+      "battery_current": "sensor.inverter_battery_current",
+      "battery_temp": "sensor.inverter_battery_temperature",
+      "battery_charge_daily": "sensor.inverter_today_battery_charge",
+      "battery_discharge_daily": "sensor.inverter_today_battery_discharge",
+      "grid_power": "sensor.inverter_external_consumption",
+      "grid_connected": "binary_sensor.inverter_grid",
+      "grid_import_daily": "sensor.inverter_today_energy_import",
+      "grid_export_daily": "sensor.inverter_today_energy_export",
+      "inverter_power": "sensor.inverter_output_l1_power",
+      "inverter_voltage": "sensor.inverter_output_l1_voltage",
+      "inverter_frequency": "sensor.inverter_grid_frequency",
+      "inverter_temp": "sensor.inverter_temperature",
+      "inverter_dc_temp": "sensor.inverter_dc_temperature",
+      "inverter_state": "sensor.inverter_device_state",
+      "inverter_program": "select.inverter_time_of_use",
+      "inverter_pattern": "select.inverter_energy_pattern",
+      "aux_power": "sensor.evse_charging_power",
+      "aux_connected": "binary_sensor.evse_connection",
+      "aux_daily": "sensor.evse_today_ev_charge",
+      "load_daily": "sensor.inverter_today_load_consumption",
+      "aux_max_power": "number.evse_charging_power_limit"
+    }
+  }
+}

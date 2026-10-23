@@ -141,6 +141,8 @@ ALLOWED_HA_SERVICES: dict[str, frozenset[str]] = {
     "humidifier": frozenset({"set_humidity", "turn_off", "turn_on"}),
     "input_boolean": frozenset({"turn_off", "turn_on"}),
     "input_button": frozenset({"press"}),
+    "input_number": frozenset({"set_value"}),
+    "input_select": frozenset({"select_option"}),
     "light": frozenset({"turn_off", "turn_on"}),
     "lock": frozenset({"lock", "unlock"}),
     "media_player": frozenset({
@@ -404,7 +406,17 @@ def _apply_cors(resp):
 
 # Floor-plan reads the Lovelace card needs. Writes, backups, and every
 # Home Assistant proxy route stay administrator-only.
-_READ_ONLY_EXACT = {"/", "/index.html", "/api/floors"}
+# Energy GETs are ingress reads (any signed-in user). POST /api/energy/control
+# and /api/ha/stream stay administrator-only.
+_READ_ONLY_EXACT = {
+    "/",
+    "/index.html",
+    "/energia",
+    "/api/floors",
+    "/api/energy/map",
+    "/api/energy/state",
+    "/api/energy/flow",
+}
 
 
 def _ingress_read_only(method: str, path: str) -> bool:
@@ -1135,6 +1147,83 @@ def restore_config():
 
     save_config(new_config)
     return jsonify({"ok": True, "message": "Configuration restored successfully"})
+
+
+# ---------------------------------------------------------------------------
+# Energía: Carga / Solar / Batería + flujo. Reads use the ingress list.
+# Controls run as the signed-in user (frontend) or, for an administrator,
+# through invoke below with get_ha_token() / the direct-access bearer.
+# ---------------------------------------------------------------------------
+from energy import create_blueprint as _energy_blueprint  # noqa: E402
+
+
+def _energy_get_state(entity_id: str):
+    with _state_lock:
+        cached = _state_cache.get(entity_id)
+    if cached or not get_ha_token():
+        return cached
+    try:
+        resp = requests.get(
+            f"{HA_BASE_URL}/states/{entity_id}",
+            headers=ha_headers(),
+            timeout=10,
+            allow_redirects=False,
+        )
+        return resp.json() if resp.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def _energy_all_states() -> list:
+    with _state_lock:
+        if _state_cache:
+            return list(_state_cache.values())
+    if not get_ha_token():
+        return []
+    try:
+        resp = requests.get(
+            f"{HA_BASE_URL}/states",
+            headers=ha_headers(),
+            timeout=10,
+            allow_redirects=False,
+        )
+        data = resp.json()
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _energy_invoke(domain: str, service: str, payload: dict):
+    """Call Home Assistant as this request (admin ingress token or user bearer)."""
+    if not _service_allowed(domain, service):
+        log.warning("Blocked energy service %s.%s from %s", domain, service, _peer_ip())
+        return 403, {"ok": False, "error": "Service is not allowed"}
+    token = _token_for_request()
+    if not token:
+        return 503, {"ok": False, "error": "No supervisor token"}
+    try:
+        resp = requests.post(
+            f"{_api_base_for_request()}/services/{domain}/{service}",
+            headers=ha_headers(token),
+            json=payload,
+            timeout=10,
+            allow_redirects=False,
+        )
+    except Exception as exc:
+        log.warning("energy control %s.%s failed: %s", domain, service, exc)
+        return 503, {"ok": False, "error": "Could not call Home Assistant service"}
+    if resp.status_code >= 400:
+        return 502, {"ok": False, "error": f"HA HTTP {resp.status_code}"}
+    return 200, {"ok": True}
+
+
+app.register_blueprint(_energy_blueprint(
+    static_dir=Path(app.static_folder),
+    get_state=_energy_get_state,
+    get_all_states=_energy_all_states,
+    is_ws_connected=lambda: _ha_ws_connected,
+    invoke_service=_energy_invoke,
+))
 
 
 if __name__ == "__main__":
