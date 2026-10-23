@@ -8,7 +8,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
-COPY server.py .
+COPY server.py energy.py energy_map.json ./
 COPY static/ static/
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh

@@ -1382,3 +1382,214 @@ def test_direct_access_option_from_options_file(tmp_data, monkeypatch):
     assert srv.direct_access_enabled() is False
     (srv.DATA_DIR / "options.json").write_text(json.dumps({"allow_direct_access": True}))
     assert srv.direct_access_enabled() is True
+
+
+# ---------------------------------------------------------------------------
+# Energía on top of the ingress / allowlist model
+# ---------------------------------------------------------------------------
+
+
+def test_lan_cannot_read_energy(lan_client):
+    from unittest.mock import patch
+
+    with patch("server.requests.get") as mock_get, patch("server.requests.post") as mock_post:
+        assert lan_client.get("/api/energy/map").status_code == 401
+        assert lan_client.get("/api/energy/state").status_code == 401
+        assert lan_client.get("/api/energy/flow").status_code == 401
+        assert lan_client.get("/energia").status_code == 401
+        posted = lan_client.post(
+            "/api/energy/control",
+            data=json.dumps({"entity_id": "input_boolean.carga_instantanea_tesla", "service": "input_boolean.turn_on"}),
+            content_type="application/json",
+        )
+    assert posted.status_code == 401
+    mock_get.assert_not_called()
+    mock_post.assert_not_called()
+
+
+def test_ingress_non_admin_can_read_energy_but_not_control_or_stream(ingress_member):
+    from unittest.mock import patch
+
+    assert ingress_member.get("/api/energy/map").status_code == 200
+    state = ingress_member.get("/api/energy/state")
+    assert state.status_code == 200
+    assert "states" in state.get_json()
+    flow = ingress_member.get("/api/energy/flow")
+    assert flow.status_code == 200
+    assert "directions" in flow.get_json()
+    assert ingress_member.get("/energia").status_code == 200
+    assert ingress_member.get("/api/ha/stream").status_code == 403
+    with patch("server.requests.post") as mock_post:
+        denied = ingress_member.post(
+            "/api/energy/control",
+            data=json.dumps({
+                "entity_id": "input_boolean.carga_instantanea_tesla",
+                "service": "input_boolean.turn_on",
+                "dry_run": False,
+            }),
+            content_type="application/json",
+        )
+    assert denied.status_code == 403
+    mock_post.assert_not_called()
+
+
+def test_energy_allowlist_rejects_unlisted_and_accepts_helpers(client):
+    from unittest.mock import patch, MagicMock
+
+    tokens = _Tokens(supervisor="supervisor-secret")
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = []
+    mock_resp.status_code = 200
+    try:
+        with patch("server.requests.post", return_value=mock_resp) as mock_post:
+            blocked = _service_post(client, "homeassistant", "restart", {})
+            blocked_num = _service_post(client, "number", "set_value", {"entity_id": "number.evse_charging_power_limit", "value": 1})
+            ok_num = _service_post(client, "input_number", "set_value", {"entity_id": "input_number.carga_umbral_solar_kwh", "value": 18})
+            ok_sel = _service_post(client, "input_select", "select_option", {"entity_id": "input_select.carga_dia_lunes", "option": "casa"})
+        assert blocked.status_code == 403
+        assert blocked_num.status_code == 403
+        assert ok_num.status_code == 200
+        assert ok_sel.status_code == 200
+        assert mock_post.call_count == 2
+        urls = [c.args[0] for c in mock_post.call_args_list]
+        assert any(u.endswith("/services/input_number/set_value") for u in urls)
+        assert any(u.endswith("/services/input_select/select_option") for u in urls)
+        for call in mock_post.call_args_list:
+            assert call.kwargs["headers"]["Authorization"] == "Bearer supervisor-secret"
+    finally:
+        tokens.close()
+
+
+def test_energy_control_dry_run_and_live_use_request_token(client):
+    import server as srv
+    from unittest.mock import patch, MagicMock
+
+    tokens = _Tokens(supervisor="supervisor-secret")
+    srv._state_cache["input_number.carga_umbral_solar_kwh"] = {
+        "entity_id": "input_number.carga_umbral_solar_kwh",
+        "state": "15",
+        "attributes": {"min": 0, "max": 60},
+    }
+    srv._state_cache["input_boolean.carga_instantanea_tesla"] = {
+        "entity_id": "input_boolean.carga_instantanea_tesla",
+        "state": "off",
+        "attributes": {},
+    }
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = []
+    mock_resp.status_code = 200
+    try:
+        with patch("server.requests.post", return_value=mock_resp) as mock_post:
+            dry = client.post(
+                "/api/energy/control",
+                data=json.dumps({
+                    "entity_id": "input_number.carga_umbral_solar_kwh",
+                    "service": "input_number.set_value",
+                    "data": {"value": 18},
+                    "dry_run": True,
+                }),
+                content_type="application/json",
+            )
+            assert dry.status_code == 200
+            assert dry.get_json()["dry_run"] is True
+            mock_post.assert_not_called()
+            live = client.post(
+                "/api/energy/control",
+                data=json.dumps({
+                    "entity_id": "input_boolean.carga_instantanea_tesla",
+                    "service": "input_boolean.turn_on",
+                }),
+                content_type="application/json",
+            )
+            rejected = client.post(
+                "/api/energy/control",
+                data=json.dumps({
+                    "entity_id": "number.evse_charging_power_limit",
+                    "service": "number.set_value",
+                    "data": {"value": 5000},
+                }),
+                content_type="application/json",
+            )
+        assert live.status_code == 200, live.get_json()
+        assert rejected.status_code == 400
+        mock_post.assert_called_once()
+        assert mock_post.call_args.args[0].endswith("/services/input_boolean/turn_on")
+        assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer supervisor-secret"
+        assert "HA_TOKEN" not in (mock_post.call_args.kwargs["headers"]["Authorization"])
+    finally:
+        tokens.close()
+
+
+def test_energy_direct_access_calls_as_user(lan_client, monkeypatch):
+    import server as srv
+    from unittest.mock import patch, MagicMock
+
+    monkeypatch.setenv("ALLOW_DIRECT_ACCESS", "true")
+    tokens = _Tokens(supervisor="supervisor-secret", ha="")
+    srv._state_cache["input_boolean.carga_forzar_no"] = {
+        "entity_id": "input_boolean.carga_forzar_no",
+        "state": "off",
+        "attributes": {},
+    }
+    seen = {}
+
+    def fake_get(url, headers=None, timeout=None, allow_redirects=None):
+        resp = MagicMock()
+        resp.status_code = 200
+        return resp
+
+    def fake_post(url, headers=None, json=None, timeout=None, allow_redirects=None):
+        seen["url"] = url
+        seen["auth"] = headers["Authorization"]
+        seen["body"] = json
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = []
+        return resp
+
+    try:
+        with patch("server.requests.get", side_effect=fake_get), patch("server.requests.post", side_effect=fake_post):
+            resp = lan_client.post(
+                "/api/energy/control",
+                data=json.dumps({
+                    "entity_id": "input_boolean.carga_forzar_no",
+                    "service": "input_boolean.turn_on",
+                }),
+                content_type="application/json",
+                headers={"Authorization": "Bearer user-llat"},
+            )
+        assert resp.status_code == 200, resp.get_json()
+        assert seen["auth"] == "Bearer user-llat"
+        assert "supervisor-secret" not in seen["auth"]
+        assert seen["url"].endswith("/services/input_boolean/turn_on")
+        assert "homeassistant" in seen["url"]
+    finally:
+        tokens.close()
+
+
+def test_energy_flow_reads_cache_without_ha_token_global(client):
+    import server as srv
+
+    tokens = _Tokens(supervisor="supervisor-secret", ha="")
+    try:
+        srv._state_cache["sensor.inverter_external_consumption"] = {
+            "entity_id": "sensor.inverter_external_consumption",
+            "state": "0.02",
+            "attributes": {"unit_of_measurement": "kW"},
+        }
+        srv._state_cache["sensor.inverter_output_l1_power"] = {
+            "entity_id": "sensor.inverter_output_l1_power",
+            "state": "1012",
+            "attributes": {"unit_of_measurement": "W"},
+        }
+        srv._state_cache["sensor.evse_charging_power"] = {
+            "entity_id": "sensor.evse_charging_power",
+            "state": "0",
+            "attributes": {"unit_of_measurement": "W"},
+        }
+        body = client.get("/api/energy/flow").get_json()
+        assert body["grid_w"] == 20.0
+        assert body["house_w"] == 1012.0
+        assert srv.HA_TOKEN == ""
+    finally:
+        tokens.close()

@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HADomotics – Configuration</title>
+  <title>HADomotics</title>
   <link rel="stylesheet" href="static/css/style.css" />
+  <link rel="stylesheet" href="static/energia/css/energy.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
 </head>
 <body>
@@ -14,10 +15,11 @@
   <header class="app-header">
     <span class="material-icons header-icon">floor_plan</span>
     <h1>HADomotics</h1>
-    <span class="header-subtitle">Interactive Floor Plan</span>
+    <span class="header-subtitle" id="headerSubtitle">Dispositivos</span>
     <span id="haConnIndicatorHeader" class="ha-conn-indicator offline" title="HA connection"></span>
   </header>
 
+  <div id="appDispositivos" class="app-pane">
   <main class="app-layout">
     <aside class="sidebar collapsed" id="sidebar">
       <section class="sidebar-section">
@@ -239,6 +241,51 @@
       </form>
     </aside>
   </main>
+  </div>
+
+  <div id="appEnergia" class="app-pane" hidden>
+    <header class="energy-top">
+      <div class="brand">HADomotics <span>Energía</span></div>
+      <div class="conn" id="conn" title="Conexión"><span class="dot"></span><span id="connText">Desconectado</span></div>
+      <button class="icon-btn" id="btnSettings" type="button" aria-label="Ajustes">⚙</button>
+    </header>
+    <div class="banner" id="dryBanner">MODO PRUEBA (dry-run), activado por defecto: los controles no se envían a Home Assistant. Para enviarlos: ⚙ Ajustes → desmarca «Modo prueba (dry-run)» → Guardar.</div>
+    <nav class="energy-tabs" id="tabs"></nav>
+    <main id="screens"></main>
+
+    <div class="sheet hidden" id="settings">
+      <div class="sheet-body">
+        <h2>Ajustes</h2>
+        <p class="muted" id="modeInfo"></p>
+        <label class="row"><input id="dryRun" type="checkbox"> Modo prueba (dry-run): no enviar servicios. Activado por defecto; se recuerda en este navegador.</label>
+        <div class="actions">
+          <button id="btnSave" class="primary" type="button">Guardar</button>
+          <button id="btnClose" type="button">Cerrar</button>
+        </div>
+        <h3>Registro de llamadas</h3>
+        <pre id="callLog" class="log"></pre>
+      </div>
+    </div>
+
+    <div class="sheet hidden" id="confirm">
+      <div class="sheet-body small">
+        <p id="confirmText"></p>
+        <div class="actions"><button id="confirmYes" class="primary" type="button">Confirmar</button><button id="confirmNo" type="button">Cancelar</button></div>
+      </div>
+    </div>
+    <div class="toast hidden" id="toast"></div>
+  </div>
+
+  <nav class="app-nav" id="appNav">
+    <button type="button" id="navDispositivos" data-app="dispositivos" class="active">
+      <span class="material-icons">devices</span>
+      Dispositivos
+    </button>
+    <button type="button" id="navEnergia" data-app="energia">
+      <span class="material-icons">bolt</span>
+      Energía
+    </button>
+  </nav>
 
   <div class="modal-overlay" id="quickPositionModal" style="display:none">
     <div class="modal">
@@ -267,5 +314,8 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <script src="static/js/app.js"></script>
+  <script src="static/energia/js/transport.js"></script>
+  <script src="static/energia/js/flow.js"></script>
+  <script src="static/energia/js/energy.js"></script>
 </body>
 </html>

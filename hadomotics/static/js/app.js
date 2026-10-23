@@ -4,7 +4,16 @@
 
 "use strict";
 
-const API = window.location.pathname.replace(/\/+$/, "");
+function panelRoot() {
+  let path = window.location.pathname.replace(/\/+$/, "");
+  if (path.endsWith("/index.html")) path = path.slice(0, -"/index.html".length);
+  if (path.endsWith("/energia")) path = path.slice(0, -"/energia".length);
+  return path;
+}
+
+const API = panelRoot();
+window.HADomotics = window.HADomotics || {};
+window.HADomotics.panelRoot = panelRoot;
 
 // ---------------------------------------------------------------------------
 // State
@@ -446,7 +455,14 @@ function renderElements(elements) {
         });
       }
     } else {
-      div.addEventListener("click", () => handleElementTap(el, div));
+      div.addEventListener("click", (ev) => {
+        if (swipeTriggered) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
+        handleElementTap(el, div);
+      });
     }
 
     cc.appendChild(div);
@@ -1135,7 +1151,109 @@ document.addEventListener("DOMContentLoaded", async () => {
   window.addEventListener("resize", () => {
     setTimeout(fitFloorPlan, 50);
   });
+
+  const navDispositivos = $("navDispositivos");
+  const navEnergia = $("navEnergia");
+  if (navDispositivos) navDispositivos.addEventListener("click", () => showApp("dispositivos"));
+  if (navEnergia) navEnergia.addEventListener("click", () => showApp("energia"));
+  const openPath = window.location.pathname.replace(/\/+$/, "");
+  if (openPath.endsWith("/energia") || window.location.hash === "#energia") {
+    showApp("energia");
+  } else {
+    showApp("dispositivos");
+  }
+
+  installFloorSwipe();
 });
+
+function showApp(which) {
+  const energy = which === "energia";
+  const dev = $("appDispositivos");
+  const en = $("appEnergia");
+  if (dev) dev.hidden = energy;
+  if (en) en.hidden = !energy;
+  document.body.classList.toggle("app-energia", energy);
+  document.body.classList.toggle("app-dispositivos", !energy);
+  const navD = $("navDispositivos");
+  const navE = $("navEnergia");
+  if (navD) navD.classList.toggle("active", !energy);
+  if (navE) navE.classList.toggle("active", energy);
+  const sub = $("headerSubtitle");
+  if (sub) sub.textContent = energy ? "Energía" : "Dispositivos";
+  document.title = energy ? "HADomotics · Energía" : "HADomotics · Dispositivos";
+  if (window.history && window.history.replaceState) {
+    let nextPath = window.location.pathname.replace(/\/+$/, "");
+    if (nextPath.endsWith("/energia")) nextPath = nextPath.slice(0, -"/energia".length);
+    if (!nextPath) nextPath = "/";
+    const hash = energy ? "#energia" : "#dispositivos";
+    window.history.replaceState(null, "", nextPath + hash);
+  }
+  if (energy && window.HADomoticsEnergy && window.HADomoticsEnergy.ensureStarted) {
+    window.HADomoticsEnergy.ensureStarted();
+  }
+  if (!energy) setTimeout(fitFloorPlan, 50);
+}
+
+window.HADomotics.showApp = showApp;
+
+function installFloorSwipe() {
+  let startX = null;
+  let startY = null;
+  let pointerId = null;
+  const SWIPE_MIN = 60;
+
+  function centerZone(x, y) {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    return x >= w * 0.15 && x <= w * 0.85 && y >= h * 0.15 && y <= h * 0.85;
+  }
+
+  function blocked(target) {
+    return target && target.closest && target.closest(
+      "button, a, input, textarea, select, .app-nav, .editor-toolbar, .modal-overlay, .properties-panel, .sidebar, .energy-tabs, .sheet, .quick-position-grid"
+    );
+  }
+
+  function switchFloorByDelta(delta) {
+    if (!viewMode || !floors.length || document.body.classList.contains("app-energia")) return;
+    const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const idx = sorted.findIndex((f) => currentFloor && f.id === currentFloor.id);
+    if (idx < 0) return;
+    const next = idx + delta;
+    if (next < 0 || next >= sorted.length) return;
+    selectFloor(sorted[next].id);
+  }
+
+  document.addEventListener("pointerdown", (e) => {
+    if (!viewMode || document.body.classList.contains("app-energia")) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (blocked(e.target) || !centerZone(e.clientX, e.clientY)) {
+      startY = null;
+      return;
+    }
+    startX = e.clientX;
+    startY = e.clientY;
+    pointerId = e.pointerId;
+  });
+
+  document.addEventListener("pointerup", (e) => {
+    if (startY == null || e.pointerId !== pointerId) return;
+    const dy = e.clientY - startY;
+    const dx = Math.abs(e.clientX - startX);
+    startY = null;
+    startX = null;
+    if (!viewMode || document.body.classList.contains("app-energia")) return;
+    if (Math.abs(dy) < SWIPE_MIN || Math.abs(dy) < dx) return;
+    swipeTriggered = true;
+    setTimeout(() => { swipeTriggered = false; }, 400);
+    switchFloorByDelta(dy < 0 ? 1 : -1);
+  });
+
+  document.addEventListener("pointercancel", () => {
+    startY = null;
+    startX = null;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Imagen del floor plan: ajuste automático al contenedor

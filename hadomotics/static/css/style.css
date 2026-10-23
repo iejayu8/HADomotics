@@ -6,34 +6,35 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 :root {
-  --primary: #1976D2;
-  --primary-light: #42A5F5;
-  --primary-dark: #0D47A1;
-  --danger: #D32F2F;
-  --success: #388E3C;
-  --warn: #F57C00;
-  --bg: #F5F7FA;
-  --surface: #FFFFFF;
-  --surface-2: #ECEFF1;
-  --border: #CFD8DC;
-  --text: #263238;
-  --text-secondary: #546E7A;
-  --header-bg: #1565C0;
-  --header-text: #FFFFFF;
+  --primary: #38bdf8;
+  --primary-light: #7dd3fc;
+  --primary-dark: #e0f2fe;
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warn: #f59e0b;
+  --bg: #0b1220;
+  --surface: #131c2e;
+  --surface-2: #1b2740;
+  --border: #22304a;
+  --text: #e5e7eb;
+  --text-secondary: #94a3b8;
+  --header-bg: #111827;
+  --header-text: #e5e7eb;
   --sidebar-w: 260px;
   --props-w: 280px;
   --header-h: 56px;
+  --nav-h: 64px;
   --radius: 8px;
-  --shadow: 0 2px 8px rgba(0,0,0,.12);
-  --kiosk-bg: #0b0d12;
-  --dock-bg: rgba(16, 18, 24, 0.72);
-  --dock-border: rgba(255, 255, 255, 0.14);
+  --shadow: 0 2px 8px rgba(0,0,0,.35);
+  --kiosk-bg: #0b1220;
+  --dock-bg: rgba(17, 24, 39, 0.92);
+  --dock-border: #22304a;
   --dock-h: 64px;
 }
 
 body {
   margin: 0;
-  font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+  font-family: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
   font-size: 14px;
   color: var(--text);
   background: var(--bg);
@@ -42,6 +43,7 @@ body {
   flex-direction: column;
   overflow: hidden;
   touch-action: manipulation;
+  color-scheme: dark;
 }
 
 .app-header {
@@ -188,8 +190,8 @@ body.view-mode-active .ha-conn-indicator-fixed {
 
 .floor-list li.active,
 .element-list li.active {
-  background: #E3F2FD;
-  color: var(--primary-dark);
+  background: rgba(56, 189, 248, 0.16);
+  color: var(--primary);
 }
 
 .floor-name { flex: 1; }
@@ -289,7 +291,7 @@ body.view-mode-active #backupSection {
 .toolbar-btn.active {
   background: var(--primary);
   border-color: var(--primary);
-  color: #fff;
+  color: #04263a;
 }
 
 .spacer { flex: 1; }
@@ -336,7 +338,7 @@ body.view-mode-active #backupSection {
   border-radius: var(--radius);
   overflow: visible;
   box-shadow: var(--shadow);
-  background: #fff;
+  background: #0f172a;
 }
 
 .element-overlay {
@@ -494,6 +496,8 @@ textarea {
   border-radius: 4px;
   font-size: 0.95rem;
   font-family: inherit;
+  background: #0f172a;
+  color: var(--text);
 }
 
 input[type="color"] {
@@ -529,7 +533,7 @@ small {
 
 .btn-primary {
   background: var(--primary);
-  color: white;
+  color: #04263a;
 }
 
 .btn-danger {
@@ -545,7 +549,7 @@ small {
 
 .toast-container {
   position: fixed;
-  bottom: 20px;
+  bottom: calc(var(--nav-h) + 16px);
   right: 20px;
   z-index: 1000;
   display: flex;
@@ -581,7 +585,9 @@ small {
 }
 
 .modal {
-  background: white;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
   padding: 24px;
   border-radius: 12px;
   width: min(420px, 92vw);
@@ -699,7 +705,7 @@ body.view-mode-active .floor-canvas {
 body.view-mode-active .editor-toolbar {
   position: fixed;
   left: 50%;
-  bottom: 18px;
+  bottom: calc(var(--nav-h) + 12px);
   transform: translateX(-50%);
   height: auto;
   min-height: 52px;
@@ -833,7 +839,60 @@ body.view-mode-active .element-overlay.view-mode .el-state {
 }
 
 body.view-mode-active .toast-container {
-  bottom: 96px;
+  bottom: calc(var(--nav-h) + 96px);
+}
+
+.app-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-pane[hidden] {
+  display: none !important;
+}
+
+#appDispositivos .app-layout {
+  flex: 1;
+  min-height: 0;
+}
+
+.app-nav {
+  flex: 0 0 var(--nav-h);
+  height: var(--nav-h);
+  display: flex;
+  background: #111827;
+  border-top: 1px solid var(--border);
+  z-index: 4000;
+}
+
+.app-nav button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.app-nav button .material-icons {
+  font-size: 22px;
+}
+
+.app-nav button.active {
+  color: var(--primary);
+}
+
+body.app-energia .app-header {
+  display: none;
 }
 
 body.view-mode-active .empty-state,
