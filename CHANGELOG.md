@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.1
+
+### Fixed
+- **Energía ya no revierte un control.** Dentro de Home Assistant el panel leía el objeto `hass` una sola vez. El sondeo cada 4 s reenviaba esos estados viejos y tapaba el `state_changed`, así que el calendario seguía marcando «fuera» aunque Home Assistant ya hubiera pasado a «casa». Cada sondeo vuelve a leer el `hass` actual, un estado más antiguo no pisa uno más nuevo y, tras un control enviado, el panel aplica el valor y refresca enseguida.
+- **Registro de llamadas en hora de Madrid.** La hora visible del registro usa `Europe/Madrid` (en el ejemplo, 15:17 y no 14:17 UTC).
+- **Hoy y mañana del calendario semanal** se calculan en `Europe/Madrid`, igual que el resto de Energía, y no con la zona horaria del dispositivo.
+- Si la suscripción `state_changed` falla, el error queda en la consola. El sondeo del frontend sigue.
+
 ## 3.4.0
 
 ### Added
