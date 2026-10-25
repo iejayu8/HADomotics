@@ -94,6 +94,13 @@ def test_dry_run_default_in_client():
     assert 'localStorage.getItem(LS.dry) !== "0"' in text
 
 
+def test_energy_panel_ui_node():
+    import subprocess
+    script = os.path.join(os.path.dirname(__file__), "energy_panel.test.js")
+    proc = subprocess.run(["node", "--test", script], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + "\n" + proc.stderr
+
+
 def test_map_endpoint(client):
     r = client.get("/api/energy/map")
     assert r.status_code == 200

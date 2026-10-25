@@ -74,6 +74,7 @@ window.EnergyTransport = (function () {
         if (poll) clearInterval(poll);
         if (es) es.close();
       },
+      refresh() { return pull(); },
       async callService(domain, service, entityId, data, dryRun) {
         const r = await fetch(url("/api/energy/control"), {
           method: "POST",
@@ -94,16 +95,39 @@ window.EnergyTransport = (function () {
 
   function Embedded(opts) {
     const ev = emitter();
-    const hass = opts.hass;
     const want = new Set(opts.entityIds || []);
     let timer = null;
     let unsub = null;
+    let hassReadLogged = false;
+    // El frontend de Home Assistant sustituye el objeto hass en cada cambio.
+    // Hay que volver a leerlo en cada sondeo: la referencia del arranque
+    // conserva states viejos y pisa el state_changed.
+    function currentHass() {
+      if (typeof opts.getHass === "function") {
+        try {
+          return opts.getHass() || null;
+        } catch (e) {
+          if (!hassReadLogged) {
+            hassReadLogged = true;
+            console.error("EnergyTransport: embedded hass read failed", e);
+          }
+          return null;
+        }
+      }
+      return opts.hass || null;
+    }
     function snapshot() {
-      const states = (hass && hass.states) || {};
+      const hass = currentHass();
+      if (!hass || !hass.states) {
+        ev.emit("status", "disconnected");
+        ev.emit("tick");
+        return;
+      }
+      const states = hass.states;
       const list = [];
       want.forEach((id) => { if (states[id]) list.push(states[id]); });
       ev.emit("states", list);
-      ev.emit("status", hass && hass.connected === false ? "disconnected" : "connected");
+      ev.emit("status", hass.connected === false ? "disconnected" : "connected");
       ev.emit("tick");
     }
     return {
@@ -111,6 +135,7 @@ window.EnergyTransport = (function () {
       on: ev.on,
       async start() {
         snapshot();
+        const hass = currentHass();
         try {
           if (hass && hass.connection && hass.connection.subscribeEvents) {
             unsub = await hass.connection.subscribeEvents((event) => {
@@ -120,13 +145,20 @@ window.EnergyTransport = (function () {
               ev.emit("tick");
             }, "state_changed");
           }
-        } catch (e) { /* sondeo */ }
+        } catch (e) {
+          console.error("EnergyTransport: state_changed subscription failed", e);
+        }
         timer = setInterval(snapshot, 4000);
       },
       stop() {
         if (timer) clearInterval(timer);
-        if (typeof unsub === "function") { try { unsub(); } catch (e) {} }
+        if (typeof unsub === "function") {
+          try { unsub(); } catch (e) {
+            console.error("EnergyTransport: state_changed unsubscribe failed", e);
+          }
+        }
       },
+      refresh() { snapshot(); },
       callService(domain, service, entityId, data, dryRun) {
         return Addon(opts).callService(domain, service, entityId, data, dryRun);
       },

@@ -43,6 +43,101 @@
     return !s || s.state == null || s.state === "unavailable" || s.state === "unknown" || s.state === "";
   }
 
+  const madridClockFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const madridDateFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  function madridPick(parts, type) {
+    const part = parts.find((p) => p.type === type);
+    return part ? part.value : "";
+  }
+
+  function madridClock(date) {
+    const parts = madridClockFmt.formatToParts(date);
+    let hour = madridPick(parts, "hour") || "00";
+    if (hour === "24") hour = "00";
+    return `${hour}:${madridPick(parts, "minute") || "00"}:${madridPick(parts, "second") || "00"}`;
+  }
+
+  // Lunes = 0 … domingo = 6, como energy_map.json. El día civil es el de Madrid.
+  function madridWeekdayIndex(date) {
+    const parts = madridDateFmt.formatToParts(date);
+    const year = Number(madridPick(parts, "year"));
+    const month = Number(madridPick(parts, "month"));
+    const day = Number(madridPick(parts, "day"));
+    const sunday0 = new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay();
+    return (sunday0 + 6) % 7;
+  }
+
+  function stateMillis(s) {
+    if (!s || !s.last_updated) return null;
+    const t = Date.parse(s.last_updated);
+    return Number.isNaN(t) ? null : t;
+  }
+
+  function isStaleUpdate(prev, s) {
+    if (!prev) return false;
+    const incoming = stateMillis(s);
+    const current = stateMillis(prev);
+    if (incoming == null || current == null) return false;
+    if (incoming < current) return true;
+    // Un control local reutiliza last_updated anterior. Un sondeo de esa
+    // misma generación no debe devolver el valor viejo.
+    if (prev._optimistic && incoming === current && s.state !== prev.state) return true;
+    return false;
+  }
+
+  function optimisticEntity(prev, entityId, control, value) {
+    const state = control === "toggle" ? (value ? "on" : "off") : String(value);
+    const next = {
+      entity_id: entityId,
+      state: state,
+      attributes: (prev && prev.attributes) || {},
+      _optimistic: true,
+    };
+    if (prev && prev.last_updated) next.last_updated = prev.last_updated;
+    return next;
+  }
+
+  function applyStates(store, list) {
+    (list || []).forEach((s) => {
+      if (!s || !s.entity_id) return;
+      if (s._removed) { delete store[s.entity_id]; return; }
+      const prev = store[s.entity_id];
+      if (isStaleUpdate(prev, s)) return;
+      if (s._delta && prev) {
+        if (s.state !== undefined) prev.state = s.state;
+        if (s.attributes) prev.attributes = Object.assign({}, prev.attributes, s.attributes);
+        (s.attrs_removed || []).forEach((k) => delete prev.attributes[k]);
+        if (s.last_updated) prev.last_updated = s.last_updated;
+        delete prev._optimistic;
+      } else {
+        store[s.entity_id] = {
+          entity_id: s.entity_id,
+          state: s.state,
+          attributes: s.attributes || {},
+          last_updated: s.last_updated,
+        };
+      }
+    });
+    return store;
+  }
+
+  function callLogLine(c) {
+    const clock = madridClock(new Date(c.ts));
+    return `${clock} ${c.dry_run ? "DRY " : ""}${c.domain}.${c.service} ${c.entity_id} ${JSON.stringify(c.data)} → ${c.result}`;
+  }
+
   function fmt(it, s) {
     if (!s) return { txt: "sin dato", na: true };
     if (isNA(s)) return { txt: s.state === "unknown" ? "desconocido" : "no disponible", na: true };
@@ -146,13 +241,12 @@
     m.textContent = isNA(mot) ? "" : mot.state;
   }
 
-  function renderRow(row) {
+  function renderRow(row, today) {
     const eid = row.dataset.entity;
     const s = states[eid];
     const it = itemByEntity[eid];
     const val = row.querySelector(".val");
     const ctl = row.dataset.control;
-    const today = (new Date().getDay() + 6) % 7;
     if (row.dataset.weekday != null) {
       const wd = Number(row.dataset.weekday);
       row.classList.toggle("today", wd === today);
@@ -212,7 +306,8 @@
 
   let itemByEntity = {};
   function renderAll() {
-    document.querySelectorAll("#appEnergia .item[data-entity]").forEach(renderRow);
+    const today = madridWeekdayIndex(new Date());
+    document.querySelectorAll("#appEnergia .item[data-entity]").forEach((row) => renderRow(row, today));
     renderDecision();
   }
 
@@ -238,6 +333,7 @@
       if (!ok) return;
     }
     const entry = { ts: new Date().toISOString(), dry_run: dryRun, domain, service, entity_id: it.entity, data };
+    let sent = false;
     try {
       if (dryRun) {
         try {
@@ -261,6 +357,7 @@
           entry.result = "enviado";
           if (r && r.called) entry.called = r.called;
         }
+        sent = true;
       }
       toast((dryRun ? "[PRUEBA] " : "") + `${domain}.${service} → ${it.entity}`);
     } catch (e) {
@@ -269,9 +366,28 @@
     }
     callLog.push(entry);
     const logEl = $("callLog");
-    if (logEl) {
-      logEl.textContent = callLog.slice(-30).map((c) => `${c.ts.slice(11, 19)} ${c.dry_run ? "DRY " : ""}${c.domain}.${c.service} ${c.entity_id} ${JSON.stringify(c.data)} → ${c.result}`).join("\n");
+    if (logEl) logEl.textContent = callLog.slice(-30).map(callLogLine).join("\n");
+    if (sent) {
+      states[it.entity] = optimisticEntity(states[it.entity], it.entity, it.control, value);
+      renderAll();
+      refreshStatesSoon();
     }
+  }
+
+  function refreshStatesSoon() {
+    if (!transport || typeof transport.refresh !== "function") return;
+    const run = () => {
+      try {
+        const pending = transport.refresh();
+        if (pending && typeof pending.then === "function") {
+          pending.catch((e) => console.error("EnergyTransport: state refresh failed", e));
+        }
+      } catch (e) {
+        console.error("EnergyTransport: state refresh failed", e);
+      }
+    };
+    run();
+    setTimeout(run, 500);
   }
 
   function setConn(st) {
@@ -289,24 +405,7 @@
   }
 
   function onStates(list) {
-    (list || []).forEach((s) => {
-      if (!s || !s.entity_id) return;
-      if (s._removed) { delete states[s.entity_id]; return; }
-      if (s._delta && states[s.entity_id]) {
-        const cur = states[s.entity_id];
-        if (s.state !== undefined) cur.state = s.state;
-        if (s.attributes) cur.attributes = Object.assign({}, cur.attributes, s.attributes);
-        (s.attrs_removed || []).forEach((k) => delete cur.attributes[k]);
-        if (s.last_updated) cur.last_updated = s.last_updated;
-      } else {
-        states[s.entity_id] = {
-          entity_id: s.entity_id,
-          state: s.state,
-          attributes: s.attributes || {},
-          last_updated: s.last_updated,
-        };
-      }
-    });
+    applyStates(states, list);
     renderAll();
   }
 
@@ -324,7 +423,7 @@
     if (transport) transport.stop();
     const ids = Object.keys(itemByEntity);
     const hass = embeddedHass();
-    if (hass && hass.states) transport = EnergyTransport.Embedded({ entityIds: ids, hass: hass });
+    if (hass && hass.states) transport = EnergyTransport.Embedded({ entityIds: ids, getHass: embeddedHass });
     else transport = EnergyTransport.Addon({ entityIds: ids });
     transport.on("status", setConn);
     transport.on("states", onStates);
@@ -378,6 +477,11 @@
     showTab: showTab,
     refreshFlow: refreshFlow,
     ensureStarted: function () { if (started) refreshFlow(); },
+    applyStates: applyStates,
+    optimisticEntity: optimisticEntity,
+    madridClock: madridClock,
+    madridWeekdayIndex: madridWeekdayIndex,
+    callLogLine: callLogLine,
     get dryRun() { return dryRun; },
     get mode() { return transport ? transport.kind : "addon"; },
   };
