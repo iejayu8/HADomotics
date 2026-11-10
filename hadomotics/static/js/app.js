@@ -29,6 +29,8 @@ let entityStates = {};
 let statePollingTimer = null;
 let stateEventSource = null;
 let swipeTriggered = false;
+// Escala actual del plano (px de pantalla por px de la imagen original).
+let floorScale = 1;
 
 // ---------------------------------------------------------------------------
 // Utility helpers
@@ -359,7 +361,12 @@ function renderFloorCanvas(floor) {
     hide(ep);
     show(cc, "inline-block");
     img.src = `${API}/api/images/${floor.image}?t=${Date.now()}`;
-    img.onload = () => renderElements(floor.elements || []);
+    img.onload = () => {
+      renderElements(floor.elements || []);
+      // Ajustar cuando la imagen ya tiene tamaño: antes solo se hacía 50 ms
+      // después de pedirla y, con la red del coche, aún no había cargado.
+      fitFloorPlan();
+    };
     setTimeout(fitFloorPlan, 50);
   }
 }
@@ -906,8 +913,8 @@ async function deleteElement(elemId) {
 
 document.addEventListener("mousemove", async (e) => {
   if (dragState) {
-    const dx = e.clientX - dragState.startX;
-    const dy = e.clientY - dragState.startY;
+    const dx = (e.clientX - dragState.startX) / floorScale;
+    const dy = (e.clientY - dragState.startY) / floorScale;
     const newX = Math.max(0, dragState.origX + dx);
     const newY = Math.max(0, dragState.origY + dy);
     const el = currentFloor.elements.find((x) => x.id === dragState.elemId);
@@ -927,8 +934,8 @@ document.addEventListener("mousemove", async (e) => {
   }
 
   if (resizeState) {
-    const dx = e.clientX - resizeState.startX;
-    const dy = e.clientY - resizeState.startY;
+    const dx = (e.clientX - resizeState.startX) / floorScale;
+    const dy = (e.clientY - resizeState.startY) / floorScale;
     const el = currentFloor.elements.find((x) => x.id === resizeState.elemId);
     if (el) {
       el.width = Math.max(20, resizeState.origW + dx);
@@ -1112,8 +1119,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (viewMode) return;
     if (!pendingPlacement) return;
     const rect = $("canvasContainer").getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const x = (e.clientX - rect.left) / floorScale;
+    const y = (e.clientY - rect.top) / floorScale;
     placeElementAt(x, y);
   });
 
@@ -1148,9 +1155,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     cancelQuickBtn.addEventListener("click", () => hide($("quickPositionModal")));
   }
 
-  window.addEventListener("resize", () => {
-    setTimeout(fitFloorPlan, 50);
-  });
+  window.addEventListener("resize", scheduleFitFloorPlan);
+  window.addEventListener("orientationchange", () => setTimeout(fitFloorPlan, 250));
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", scheduleFitFloorPlan);
+  }
+  // El área del plano también cambia sin "resize" (cabecera que se oculta con
+  // transición al entrar en modo vista, barra lateral, panel de propiedades).
+  if (window.ResizeObserver && $("canvasWrapper")) {
+    new ResizeObserver(scheduleFitFloorPlan).observe($("canvasWrapper"));
+  }
 
   const navDispositivos = $("navDispositivos");
   const navEnergia = $("navEnergia");
@@ -1265,20 +1279,44 @@ function fitFloorPlan() {
 
   if (!wrapper || !container || !img || !img.naturalWidth) return;
 
-  container.style.transform = "none";
-
-  const kiosk = document.body.classList.contains("view-mode-active");
-  const availableWidth = wrapper.clientWidth - (kiosk ? 16 : 24);
-  const availableHeight = wrapper.clientHeight - (kiosk ? 96 : 24);
+  // Área útil real del contenedor (sin su padding; en modo vista el padding
+  // inferior deja sitio al dock flotante de plantas).
+  const cs = window.getComputedStyle(wrapper);
+  const padL = parseFloat(cs.paddingLeft) || 0;
+  const padR = parseFloat(cs.paddingRight) || 0;
+  const padT = parseFloat(cs.paddingTop) || 0;
+  const padB = parseFloat(cs.paddingBottom) || 0;
+  const availableWidth = wrapper.clientWidth - padL - padR;
+  const availableHeight = wrapper.clientHeight - padT - padB;
 
   if (availableWidth <= 0 || availableHeight <= 0) return;
 
-  const scaleX = availableWidth / img.naturalWidth;
-  const scaleY = availableHeight / img.naturalHeight;
-  const scale = Math.min(scaleX, scaleY, 1);
+  // Tamaño de la imagen original: los elementos se guardan en esos píxeles,
+  // así que escalar el contenedor completo los mantiene alineados.
+  const baseWidth = img.naturalWidth;
+  const baseHeight = img.naturalHeight;
+  img.style.width = `${baseWidth}px`;
+  img.style.height = `${baseHeight}px`;
 
-  container.style.transform = `scale(${scale})`;
+  // "contain": el plano entero cabe en el área, con su proporción.
+  const scale = Math.min(availableWidth / baseWidth, availableHeight / baseHeight);
+  floorScale = scale;
+
+  // Centrado dentro del área útil.
+  const offsetX = Math.max(0, (availableWidth - baseWidth * scale) / 2);
+  const offsetY = Math.max(0, (availableHeight - baseHeight * scale) / 2);
+
   container.style.transformOrigin = "top left";
+  container.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+}
+
+let fitFloorPlanFrame = 0;
+function scheduleFitFloorPlan() {
+  if (fitFloorPlanFrame) return;
+  fitFloorPlanFrame = window.requestAnimationFrame(() => {
+    fitFloorPlanFrame = 0;
+    fitFloorPlan();
+  });
 }
 
 // ---------------------------------------------------------------------------

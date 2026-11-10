@@ -90,8 +90,10 @@ def test_energia_page(client):
 
 def test_dry_run_default_in_client():
     text = open(os.path.join(os.path.dirname(__file__), "..", "hadomotics", "static", "energia", "js", "energy.js"), encoding="utf-8").read()
-    assert 'hadomotics.energy.dryrun' in text
-    assert 'localStorage.getItem(LS.dry) !== "0"' in text
+    # 3.4.2: modo real por defecto; prueba solo con elección explícita (clave nueva).
+    assert 'dry: "hadomotics.energy.testmode"' in text
+    assert 'localStorage.getItem(LS.dry) === "1"' in text
+    assert 'localStorage.getItem(LS.dry) !== "0"' not in text
 
 
 def test_energy_panel_ui_node():

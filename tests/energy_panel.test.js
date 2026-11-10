@@ -10,7 +10,17 @@ const JS_DIR = path.join(__dirname, "..", "hadomotics", "static", "energia", "js
 const ENTITY = "input_select.carga_dia_domingo";
 const ATTRS = { options: ["casa", "fuera"] };
 
-function loadPanel() {
+function memoryStorage(initial = {}) {
+  const data = Object.assign({}, initial);
+  return {
+    data,
+    getItem(k) { return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+    setItem(k, v) { data[k] = String(v); },
+    removeItem(k) { delete data[k]; },
+  };
+}
+
+function loadPanel(storage) {
   const errors = [];
   const timers = new Map();
   let timerId = 1;
@@ -20,10 +30,7 @@ function loadPanel() {
       log() {},
       debug() {},
     },
-    localStorage: {
-      getItem() { return "0"; },
-      setItem() {},
-    },
+    localStorage: storage || memoryStorage(),
     document: {
       addEventListener() {},
       getElementById() { return null; },
@@ -241,4 +248,46 @@ test("panel source keeps the live hass, Madrid clock and weekday", () => {
   assert.doesNotMatch(energy, /ts\.slice\(11/);
   assert.match(transport, /opts\.getHass/);
   assert.match(transport, /state_changed subscription failed/);
+});
+
+test("Energía starts in live mode when nothing was chosen", () => {
+  const storage = memoryStorage();
+  const { api } = loadPanel(storage);
+  assert.equal(api.dryRun, false);
+});
+
+test("an old dry-run value (default or chosen) does not keep test mode on", () => {
+  for (const legacy of ["1", "true", "0"]) {
+    const storage = memoryStorage({ "hadomotics.energy.dryrun": legacy });
+    const { api } = loadPanel(storage);
+    assert.equal(api.dryRun, false, `legacy ${legacy}`);
+    assert.equal(storage.getItem("hadomotics.energy.dryrun"), null, "legacy key removed");
+  }
+});
+
+test("test mode only when explicitly saved under the new key", () => {
+  assert.equal(loadPanel(memoryStorage({ "hadomotics.energy.testmode": "1" })).api.dryRun, true);
+  assert.equal(loadPanel(memoryStorage({ "hadomotics.energy.testmode": "0" })).api.dryRun, false);
+  assert.equal(loadPanel(memoryStorage({
+    "hadomotics.energy.testmode": "1",
+    "hadomotics.energy.dryrun": "0",
+  })).api.dryRun, true);
+});
+
+test("an unavailable localStorage falls back to live mode", () => {
+  const broken = {
+    getItem() { throw new Error("SecurityError"); },
+    setItem() { throw new Error("SecurityError"); },
+    removeItem() { throw new Error("SecurityError"); },
+  };
+  assert.equal(loadPanel(broken).api.dryRun, false);
+});
+
+test("settings save writes the explicit choice and the banner starts hidden", () => {
+  const energy = fs.readFileSync(path.join(JS_DIR, "energy.js"), "utf8");
+  const html = fs.readFileSync(path.join(__dirname, "..", "hadomotics", "static", "index.html"), "utf8");
+  assert.match(energy, /localStorage\.setItem\(LS\.dry, dryRun \? "1" : "0"\)/);
+  assert.match(energy, /dry: "hadomotics\.energy\.testmode"/);
+  assert.match(html, /class="banner hidden" id="dryBanner"/);
+  assert.match(html, /Desactivado por defecto/);
 });
