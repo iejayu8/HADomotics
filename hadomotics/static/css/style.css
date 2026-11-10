@@ -39,6 +39,8 @@ body {
   color: var(--text);
   background: var(--bg);
   height: 100vh;
+  /* Alto visible real en móviles/coche (sin la barra del navegador). */
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -645,6 +647,7 @@ small {
 .canvas-wrapper {
   width: 100%;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   justify-content: flex-start;

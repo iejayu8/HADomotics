@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.2
+
+### Fixed
+- **Los planos (planta baja y planta 1) caben en la ventana.** El ajuste solo se calculaba 50 ms después de pedir la imagen; como la imagen se descarga siempre de nuevo, con una red lenta (navegador del coche, móvil) aún no había cargado y el plano se quedaba a tamaño original, recortado. Ahora se ajusta al cargar la imagen y cada vez que cambia el área visible (giro de pantalla, `visualViewport`, cabecera que se oculta en modo vista).
+- El plano entero se ve con su proporción («contain»), centrado en el área libre que deja el selector de plantas, y también se amplía en pantallas grandes. Los elementos siguen en sus coordenadas de la imagen original y se escalan con ella, así que quedan alineados.
+- El alto de la página usa `100dvh` para no quedar tapado por la barra del navegador en móvil o coche.
+- En modo edición, arrastrar, redimensionar y colocar elementos convierte el movimiento a píxeles de la imagen original, así que con el plano reducido las posiciones guardadas siguen siendo correctas.
+
 ## 3.4.1
 
 ### Fixed
