@@ -249,7 +249,7 @@
       <div class="conn" id="conn" title="Conexión"><span class="dot"></span><span id="connText">Desconectado</span></div>
       <button class="icon-btn" id="btnSettings" type="button" aria-label="Ajustes">⚙</button>
     </header>
-    <div class="banner" id="dryBanner">MODO PRUEBA (dry-run), activado por defecto: los controles no se envían a Home Assistant. Para enviarlos: ⚙ Ajustes → desmarca «Modo prueba (dry-run)» → Guardar.</div>
+    <div class="banner hidden" id="dryBanner">MODO PRUEBA (dry-run) activado: los controles no se envían a Home Assistant. Para enviarlos: ⚙ Ajustes → desmarca «Modo prueba (dry-run)» → Guardar.</div>
     <nav class="energy-tabs" id="tabs"></nav>
     <main id="screens"></main>
 
@@ -257,7 +257,7 @@
       <div class="sheet-body">
         <h2>Ajustes</h2>
         <p class="muted" id="modeInfo"></p>
-        <label class="row"><input id="dryRun" type="checkbox"> Modo prueba (dry-run): no enviar servicios. Activado por defecto; se recuerda en este navegador.</label>
+        <label class="row"><input id="dryRun" type="checkbox"> Modo prueba (dry-run): no enviar servicios. Desactivado por defecto; se recuerda en este navegador.</label>
         <div class="actions">
           <button id="btnSave" class="primary" type="button">Guardar</button>
           <button id="btnClose" type="button">Cerrar</button>

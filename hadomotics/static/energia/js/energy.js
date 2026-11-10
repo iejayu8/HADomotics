@@ -1,6 +1,10 @@
 /* HADomotics Energía — Coche/Carga, Solar/Inversor, Batería y flujo.
- * El modo prueba (localStorage hadomotics.energy.dryrun) está activado
- * salvo que el valor sea "0". Con el modo prueba no hay llamada real.
+ * Desde 3.4.2 el modo real es el de por defecto. El modo prueba solo se
+ * activa si el usuario lo elige en ⚙ Ajustes y pulsa Guardar
+ * (localStorage hadomotics.energy.testmode = "1"). La clave antigua
+ * hadomotics.energy.dryrun no se respeta: valía "1" también cuando solo se
+ * había guardado el valor por defecto, así que no distingue una elección.
+ * Con el modo prueba no hay llamada real.
  * Con el modo prueba apagado, el control sale por el usuario de Home
  * Assistant (hass.callService) o, si no hay frontend, por el proxy de
  * administrador.
@@ -8,7 +12,7 @@
 "use strict";
 
 (function () {
-  const LS = { dry: "hadomotics.energy.dryrun" };
+  const LS = { dry: "hadomotics.energy.testmode", legacyDry: "hadomotics.energy.dryrun" };
   const $ = (id) => document.getElementById(id);
   const states = {};
   const callLog = [];
@@ -16,7 +20,20 @@
   let MAP = null;
   let transport = null;
   let activeTab = "flujo";
-  let dryRun = localStorage.getItem(LS.dry) !== "0";
+  let legacyDryNotice = false;
+  let dryRun = readDryRun();
+
+  // Modo prueba solo con elección explícita guardada en la clave nueva.
+  function readDryRun() {
+    let legacy = null;
+    try { legacy = localStorage.getItem(LS.legacyDry); } catch (e) { legacy = null; }
+    if (legacy !== null) {
+      // El modo prueba antiguo (por defecto o elegido) no se arrastra: se avisa una vez.
+      legacyDryNotice = legacy !== "0";
+      try { localStorage.removeItem(LS.legacyDry); } catch (e) { /* sin almacenamiento */ }
+    }
+    try { return localStorage.getItem(LS.dry) === "1"; } catch (e) { return false; }
+  }
   let started = false;
   let flowTimer = null;
 
@@ -436,7 +453,7 @@
 
   function openSettings() {
     $("dryRun").checked = dryRun;
-    $("modeInfo").textContent = "Los controles se ejecutan como tu usuario de Home Assistant. El modo prueba está activado por defecto y no envía servicios hasta que lo desmarques y pulses Guardar. Se recuerda en este navegador (hadomotics.energy.dryrun = 0 lo apaga).";
+    $("modeInfo").textContent = "Los controles se ejecutan como tu usuario de Home Assistant y se envían de verdad (modo real, por defecto). Marca «Modo prueba» y pulsa Guardar para no enviar servicios. Se recuerda en este navegador (hadomotics.energy.testmode = 1).";
     $("settings").classList.remove("hidden");
   }
 
@@ -457,13 +474,16 @@
     allItems().forEach((it) => { itemByEntity[it.entity] = it; });
     buildUI();
     applyDry();
+    if (legacyDryNotice) {
+      toast("Desde 3.4.2 los controles de Energía están en modo real. Para no enviarlos: ⚙ Ajustes → Modo prueba → Guardar.");
+    }
     $("btnSettings").onclick = openSettings;
     $("btnClose").onclick = () => $("settings").classList.add("hidden");
     $("btnSave").onclick = () => {
       dryRun = $("dryRun").checked;
       localStorage.setItem(LS.dry, dryRun ? "1" : "0");
       applyDry();
-      if (!dryRun) toast("Modo prueba desactivado: los controles se enviarán a Home Assistant");
+      toast(dryRun ? "Modo prueba activado: los controles no se enviarán" : "Modo real: los controles se enviarán a Home Assistant");
       $("settings").classList.add("hidden");
     };
     started = true;

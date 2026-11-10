@@ -8,6 +8,11 @@
 - El alto de la página usa `100dvh` para no quedar tapado por la barra del navegador en móvil o coche.
 - En modo edición, arrastrar, redimensionar y colocar elementos convierte el movimiento a píxeles de la imagen original, así que con el plano reducido las posiciones guardadas siguen siendo correctas.
 
+### Changed
+- **Energía arranca en modo real.** Los controles se envían a Home Assistant como tu usuario salvo que actives «Modo prueba (dry-run)» en ⚙ Ajustes y pulses Guardar. La elección se guarda en una clave nueva, `localStorage` `hadomotics.energy.testmode` (`1` = prueba).
+- La clave antigua `hadomotics.energy.dryrun` ya no se respeta y se borra al abrir el panel: valía `1` también si solo se había pulsado Guardar con el valor por defecto, así que no indica una elección. Si tenías el modo prueba, verás un aviso una vez; vuelve a marcarlo en ⚙ Ajustes si lo quieres.
+- El aviso amarillo de modo prueba empieza oculto y solo aparece con el modo prueba activado.
+
 ## 3.4.1
 
 ### Fixed
