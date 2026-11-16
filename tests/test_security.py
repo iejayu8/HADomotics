@@ -123,3 +123,56 @@ def test_security_and_plan_node_suite():
     script = os.path.join(HERE, "security_panel.test.js")
     proc = subprocess.run(["node", "--test", script], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# 3.5.1 — posiciones editables y elementos fuera del plano
+# ---------------------------------------------------------------------------
+
+def _map_and_overlays():
+    base = os.path.join(HERE, "..", "hadomotics")
+    return security.load_map(os.path.join(base, "security_map.json")), security.load_overlays(
+        os.path.join(base, "plan_overlays.json")
+    )
+
+
+def test_merge_positions_defaults_unchanged_without_overrides():
+    smap, ov = _map_and_overlays()
+    assert security.merge_positions(smap, {}, ov) == smap
+    assert security.merge_positions(smap, None, ov) == smap
+
+
+def test_merge_positions_applies_custom_and_outside():
+    smap, ov = _map_and_overlays()
+    ent = smap["presence"][0]["entity"]
+    merged = security.merge_positions(
+        smap, {ent: {"floor": "planta_baja", "x": -0.05, "y": 0.4, "outside": True}}, ov
+    )
+    p = next(p for p in merged["presence"] if p["entity"] == ent)
+    assert p["floor"] == "planta_baja" and p["position"] == [-0.05, 0.4]
+    assert p["outside"] is True and p["custom"] is True
+    # El original no se modifica.
+    assert "custom" not in smap["presence"][0]
+    # Registros inválidos se ignoran (la posición por defecto se mantiene).
+    for bad in ({"floor": "x", "x": 0.1, "y": 0.1}, {"floor": "planta_baja", "x": 5, "y": 0.1}, "nope"):
+        m = security.merge_positions(smap, {ent: bad}, ov)
+        assert next(p for p in m["presence"] if p["entity"] == ent) == smap["presence"][0]
+
+
+def test_validate_position_rules():
+    smap, ov = _map_and_overlays()
+    ent = smap["presence"][0]["entity"]
+    e, rec = security.validate_position(smap, ov, {"entity_id": ent, "floor": "planta_1", "x": 1.234567, "y": -0.5, "outside": 1})
+    assert e == ent and rec == {"floor": "planta_1", "x": 1.23457, "y": -0.5, "outside": True}
+    bad = [
+        {"entity_id": "binary_sensor.nope", "floor": "planta_1", "x": 0.1, "y": 0.1},
+        {"entity_id": ent, "floor": "sotano", "x": 0.1, "y": 0.1},
+        {"entity_id": ent, "floor": "planta_1", "x": 2.5, "y": 0.1},
+        {"entity_id": ent, "floor": "planta_1", "x": -1.5, "y": 0.1},
+        {"entity_id": ent, "floor": "planta_1", "x": float("nan"), "y": 0.1},
+        {"entity_id": ent, "floor": "planta_1", "x": True, "y": 0.1},
+        {"entity_id": ent, "floor": "planta_1", "x": "0.1", "y": 0.1},
+    ]
+    for body in bad:
+        with pytest.raises(ValueError):
+            security.validate_position(smap, ov, body)

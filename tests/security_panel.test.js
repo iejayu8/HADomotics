@@ -192,3 +192,83 @@ test("sources: no stored alarm code, cable is non-interactive and respects reduc
   assert.match(app, /type === "button" \|\| type === "custom"/);
   assert.match(app, /seguridad: \{ pane: "appSeguridad"/);
 });
+
+// ---------------------------------------------------------------------------
+// 3.5.1 — editar en Seguridad y elementos fuera del plano
+// ---------------------------------------------------------------------------
+
+test("explicitly placed elements (outside true/false) skip the legacy clamp and relocation", () => {
+  const { plan } = load();
+  const floors = [{ id: "a", name: "PlantaBaja", order: 1 }];
+  const crop = plan.cropFor(floors[0], floors, 1425, 736, OVERLAYS);
+  const dia = { entity_id: "scene.dia", x: 40, y: 760, width: 60, height: 40, outside: true };
+  assert.deepEqual({ ...plan.placeInCrop(dia, crop) }, { x: 40, y: 760, moved: false });
+  const inside = { entity_id: "scene.dia", x: 300, y: 300, width: 60, height: 40, outside: false };
+  assert.deepEqual({ ...plan.placeInCrop(inside, crop) }, { x: 300, y: 300, moved: false });
+  // Sin el campo: elemento antiguo, se sigue recolocando como en 3.5.0.
+  assert.equal(plan.placeInCrop({ entity_id: "scene.dia", x: 40, y: 760, width: 60, height: 40 }, crop).moved, true);
+});
+
+test("outside detection uses the centre of the rotated visual box", () => {
+  const { plan } = load();
+  const drawing = { x: 100, y: 100, w: 800, h: 400 };
+  const box = plan.visualBox({ width: 200, height: 20, rotation: 90 }, 0, 0);
+  assert.ok(Math.abs(box.w - 20) < 1e-9 && Math.abs(box.h - 200) < 1e-9);
+  assert.equal(plan.isOutside({ x: 120, y: 120, w: 20, h: 20 }, drawing), false);
+  assert.equal(plan.isOutside({ x: 60, y: 300, w: 30, h: 30 }, drawing), true);
+  assert.equal(plan.isOutside({ x: 85, y: 300, w: 40, h: 20 }, drawing), false); // centro dentro
+  assert.equal(plan.isOutside({ x: 300, y: 520, w: 40, h: 40 }, drawing), true);
+});
+
+test("clampBox keeps a box inside the visible rect with the smallest move", () => {
+  const { plan } = load();
+  const r = { x: 0, y: 0, w: 100, h: 50 };
+  assert.deepEqual({ ...plan.clampBox({ x: -20, y: 10, w: 10, h: 10 }, r) }, { x: 0, y: 10, w: 10, h: 10 });
+  assert.deepEqual({ ...plan.clampBox({ x: 95, y: 45, w: 10, h: 10 }, r) }, { x: 90, y: 40, w: 10, h: 10 });
+  assert.deepEqual({ ...plan.clampBox({ x: 30, y: 20, w: 10, h: 10 }, r) }, { x: 30, y: 20, w: 10, h: 10 });
+});
+
+test("computeFit makes room for outside elements without shrinking the drawing below 85%", () => {
+  const { plan } = load();
+  const drawing = { x: 0, y: 0, w: 1000, h: 500 };
+  // Sin extras: ajuste normal, centrado.
+  let f = plan.computeFit({ aw: 1000, ah: 1000, drawing });
+  assert.equal(f.scale, 1);
+  assert.equal(f.oy, 250);
+  // Extra debajo con sitio vertical: misma escala, el conjunto se centra.
+  f = plan.computeFit({ aw: 1000, ah: 1000, drawing, extras: [{ x: 50, y: 600, w: 80, h: 60 }] });
+  assert.equal(f.scale, 1);
+  assert.ok(f.oy + 660 * f.scale <= 1000 && f.oy >= 0);
+  // Extra a la izquierda sin sitio: se reduce, pero nunca por debajo del 85%.
+  f = plan.computeFit({ aw: 1000, ah: 1000, drawing, extras: [{ x: -600, y: 100, w: 50, h: 50 }] });
+  assert.ok(Math.abs(f.scale - 0.85) < 1e-9);
+  // En edición (minRatio 0) cabe todo.
+  f = plan.computeFit({ aw: 1000, ah: 1000, drawing, extras: [{ x: -600, y: 100, w: 50, h: 50 }], minRatio: 0 });
+  assert.ok(f.ox + -600 * f.scale >= -0.5 && f.ox + 1000 * f.scale <= 1000.5);
+});
+
+test("Seguridad drop: fractions of the image plus the outside flag", () => {
+  const { sec } = load();
+  const drawing = { x: 68, y: 20, w: 1290, h: 690 };
+  const out = sec.dropRecord(20.7, 139, 1425, 736, drawing);
+  assert.equal(out.outside, true);
+  assert.equal(out.x, Math.round((20.7 / 1425) * 1e5) / 1e5);
+  assert.equal(sec.dropRecord(464, 395, 1425, 736, drawing).outside, false);
+  assert.equal(sec.dropRecord(-100, 395, 1425, 736, drawing).x < 0, true);
+});
+
+test("sources: Seguridad pencil next to the floor chips, admin-only save, free drag", () => {
+  const html = fs.readFileSync(path.join(STATIC, "index.html"), "utf8");
+  const dock = html.slice(html.indexOf('id="secDock"'), html.indexOf("</div>", html.indexOf('id="secEditBtn"')));
+  assert.ok(dock.indexOf('id="secFloorSwitcher"') < dock.indexOf('id="secEditBtn"'));
+  assert.match(html, /id="secEditBtn"[^>]*aria-pressed="false"/);
+  const css = fs.readFileSync(path.join(STATIC, "seguridad", "css", "security.css"), "utf8");
+  assert.match(css, /\.sec-edit-btn\s*\{[^}]*order:\s*2/);
+  const js = fs.readFileSync(path.join(STATIC, "seguridad", "js", "security.js"), "utf8");
+  assert.match(js, /\/api\/security\/positions/);
+  assert.match(js, /method:\s*"PUT"/);
+  const app = fs.readFileSync(path.join(STATIC, "js", "app.js"), "utf8");
+  const dragCode = app.slice(app.indexOf("function finishElementDrop"), app.indexOf("function finishElementDrop") + 4000);
+  assert.ok(!/Math\.max\(0,/.test(dragCode), "drag must allow positions outside the image");
+  assert.match(app, /outside:\s*/);
+});

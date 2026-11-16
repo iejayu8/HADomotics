@@ -214,7 +214,28 @@
     return w && h ? window.HADomoticsPlan.cropFor(floor, floors, w, h) : null;
   }
 
-  /** Mismo ajuste "contain" centrado que Dispositivos (PR #19), sobre el recorte. */
+  // Margen libre alrededor del dibujo en edición (fracción) para soltar
+  // marcadores en el fondo, fuera del plano.
+  const EDIT_OUTSIDE_MARGIN = 0.12;
+  let editing = false;
+  let visibleRect = null;
+  let drawingRect = null;
+  let drag = null;
+
+  /** Caja (px de la imagen) del icono de un marcador y la altura de su
+   *  nombre; el nombre se orienta luego hacia donde haya sitio. */
+  function markerBox(d, sc) {
+    const x = parseFloat(d.dataset.bx) || 0, y = parseFloat(d.dataset.by) || 0;
+    return { x: x - 16 / sc, y: y - 16 / sc, w: 32 / sc, h: (16 + 34) / sc };
+  }
+
+  function labelWidthPx(d) {
+    const tag = d.querySelector(".tag");
+    return Math.max(28, ((tag && tag.textContent.length) || 0) * 6 + 14);
+  }
+
+  /** Mismo ajuste "contain" centrado que Dispositivos (PR #19), sobre el
+   *  recorte, contando también los marcadores colocados fuera del dibujo. */
   function fit() {
     const wrap = $("secCanvasWrapper");
     const canvas = $("secCanvas");
@@ -229,15 +250,59 @@
     const crop = currentCrop();
     const view = crop || { x: 0, y: 0, w, h };
     img.style.clipPath = crop ? window.HADomoticsPlan.clipInset(crop) : "";
-    scale = Math.min(aw / view.w, ah / view.h);
-    const ox = margin + Math.max(0, (aw - view.w * scale) / 2) - view.x * scale;
-    const oy = Math.max(0, (ah - view.h * scale) / 2) - view.y * scale;
+    const HP = window.HADomoticsPlan;
+    const sD = Math.min(aw / view.w, ah / view.h);
+    const extras = [...canvas.querySelectorAll(".presence.outside-plan")].map((d) => markerBox(d, sD));
+    if (editing) {
+      const m = EDIT_OUTSIDE_MARGIN;
+      extras.push({ x: view.x - view.w * m, y: view.y - view.h * m, w: view.w * (1 + 2 * m), h: view.h * (1 + 2 * m) });
+    }
+    const f = HP && HP.computeFit
+      ? HP.computeFit({ aw, ah, drawing: view, extras, minRatio: editing ? 0 : 0.85 })
+      : { scale: sD, ox: (aw - view.w * sD) / 2 - view.x * sD, oy: (ah - view.h * sD) / 2 - view.y * sD };
+    scale = f.scale;
+    const ox = margin + f.ox;
+    const oy = f.oy;
     canvas.style.width = w + "px";
     canvas.style.height = h + "px";
     canvas.style.transform = `translate(${ox}px, ${oy}px) scale(${scale})`;
     canvas.style.setProperty("--sec-inv", String(Math.min(3.5, Math.max(1, 1 / scale))));
-    // Plano pequeño (móvil): solo se rotulan los sensores con persona; el resto, en la lista.
+    // Plano pequeño (móvil): etiquetas más compactas.
     canvas.classList.toggle("compact", view.w * scale < 640);
+    const inset = 6;
+    visibleRect = {
+      x: (inset - ox) / scale,
+      y: (inset - oy) / scale,
+      w: (wrap.clientWidth - 2 * inset) / scale,
+      h: (wrap.clientHeight - 2 * inset) / scale,
+    };
+    drawingRect = view;
+    placeMarkers();
+  }
+
+  /** Coloca los marcadores. Los de fuera del dibujo, en su zona pero siempre
+   *  dentro de la parte visible (modo vista). */
+  function placeMarkers() {
+    const canvas = $("secCanvas");
+    const HP = window.HADomoticsPlan;
+    if (!canvas) return;
+    canvas.querySelectorAll(".presence").forEach((d) => {
+      let x = parseFloat(d.dataset.bx) || 0, y = parseFloat(d.dataset.by) || 0;
+      if (d.classList.contains("outside-plan") && visibleRect) {
+        if (!editing && HP && HP.clampBox) {
+          const box = markerBox(d, scale);
+          const c = HP.clampBox(box, visibleRect);
+          x += c.x - box.x;
+          y += c.y - box.y;
+        }
+        // El nombre crece hacia donde hay sitio en pantalla.
+        const sx = (x - visibleRect.x) * scale, lw = labelWidthPx(d);
+        d.classList.toggle("tag-start", sx - lw / 2 < 0);
+        d.classList.toggle("tag-end", sx - lw / 2 >= 0 && sx + lw / 2 > visibleRect.w * scale);
+      }
+      d.style.left = x.toFixed(1) + "px";
+      d.style.top = y.toFixed(1) + "px";
+    });
   }
 
   function renderPresence() {
@@ -255,22 +320,139 @@
     (MAP.presence || []).forEach((p) => {
       if (p.floor !== key || !Array.isArray(p.position)) return;
       const d = document.createElement("div");
-      // Las cámaras exteriores (pegadas al borde de la imagen) se dejan en el
-      // borde del dibujo recortado.
-      const [px, py] = window.HADomoticsPlan
-        ? window.HADomoticsPlan.clampPoint(p.position[0] * w, p.position[1] * h, crop, 0)
-        : [p.position[0] * w, p.position[1] * h];
+      let px = p.position[0] * w, py = p.position[1] * h;
+      // Posición por defecto: las cámaras exteriores (pegadas al borde de la
+      // imagen) se dejan en el borde del dibujo recortado. Una posición
+      // guardada en modo edición se respeta tal cual, también fuera del dibujo.
+      if (!p.custom && window.HADomoticsPlan) {
+        [px, py] = window.HADomoticsPlan.clampPoint(px, py, crop, 0);
+      }
       const fx = (px - view.x) / view.w;
       const edge = fx < 0.15 ? " tag-start" : fx > 0.85 ? " tag-end" : "";
-      d.className = "presence" + (p.exterior ? " exterior" : "") + edge;
+      d.className = "presence" + (p.exterior ? " exterior" : "") + (p.outside ? " outside-plan" : "") + edge;
       d.dataset.entity = p.entity;
+      d.dataset.bx = px.toFixed(2);
+      d.dataset.by = py.toFixed(2);
       d.style.left = px.toFixed(1) + "px";
       d.style.top = py.toFixed(1) + "px";
       d.setAttribute("role", "img");
       d.innerHTML = `<span class="dot" aria-hidden="true"><span class="material-icons">${p.exterior ? "videocam" : "directions_run"}</span></span><span class="tag" aria-hidden="true">${esc(p.name)}</span>`;
+      d.addEventListener("pointerdown", (e) => startDrag(e, d));
       canvas.appendChild(d);
     });
+    renderEditOutline(view);
     updatePresence();
+  }
+
+  // ---------------------------------------------------------------- Edición
+  /** Contorno discontinuo del dibujo en edición: fuera de él queda el fondo. */
+  function renderEditOutline(view) {
+    const canvas = $("secCanvas");
+    if (!canvas) return;
+    canvas.querySelectorAll(":scope > .plan-drawing-outline").forEach((e) => e.remove());
+    if (!editing || !view) return;
+    const o = document.createElement("div");
+    o.className = "plan-drawing-outline";
+    o.style.left = view.x + "px";
+    o.style.top = view.y + "px";
+    o.style.width = view.w + "px";
+    o.style.height = view.h + "px";
+    canvas.appendChild(o);
+  }
+
+  function setEditing(on) {
+    editing = !!on;
+    const app = $("appSeguridad");
+    if (app) app.classList.toggle("sec-editing", editing);
+    const btn = $("secEditBtn");
+    if (btn) {
+      btn.classList.toggle("active", editing);
+      btn.setAttribute("aria-pressed", editing ? "true" : "false");
+      btn.title = editing ? "Terminar de mover elementos" : "Mover elementos";
+      btn.setAttribute("aria-label", btn.title);
+      const icon = btn.querySelector(".material-icons");
+      if (icon) icon.textContent = editing ? "check" : "edit";
+    }
+    if (editing) {
+      Object.keys(POPS).forEach((n) => setPopOpen(n, false));
+      toast("Modo edición: arrastra sensores y cámaras. Se guardan al soltar; fuera de la línea quedan en el fondo.");
+    }
+    renderPresence();
+    fit();
+  }
+
+  function startDrag(e, d) {
+    if (!editing || (e.button !== undefined && e.button !== 0)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    drag = {
+      d,
+      startX: e.clientX,
+      startY: e.clientY,
+      ox: parseFloat(d.dataset.bx) || 0,
+      oy: parseFloat(d.dataset.by) || 0,
+      moved: false,
+    };
+    d.classList.add("dragging");
+    try { d.setPointerCapture(e.pointerId); } catch (err) { /* sin captura */ }
+    d.onpointermove = (ev) => {
+      if (!drag) return;
+      const dx = (ev.clientX - drag.startX) / scale, dy = (ev.clientY - drag.startY) / scale;
+      if (Math.abs(ev.clientX - drag.startX) > 2 || Math.abs(ev.clientY - drag.startY) > 2) drag.moved = true;
+      d.dataset.bx = (drag.ox + dx).toFixed(2);
+      d.dataset.by = (drag.oy + dy).toFixed(2);
+      d.style.left = d.dataset.bx + "px";
+      d.style.top = d.dataset.by + "px";
+    };
+    d.onpointerup = d.onpointercancel = () => endDrag(d);
+  }
+
+  /** Fracción de la imagen y si queda fuera del dibujo, para guardar. */
+  function dropRecord(px, py, w, h, drawing) {
+    const outside = !!drawing && (px < drawing.x || py < drawing.y || px > drawing.x + drawing.w || py > drawing.y + drawing.h);
+    return { x: Math.round((px / w) * 1e5) / 1e5, y: Math.round((py / h) * 1e5) / 1e5, outside };
+  }
+
+  async function endDrag(d) {
+    const st = drag;
+    drag = null;
+    d.onpointermove = d.onpointerup = d.onpointercancel = null;
+    d.classList.remove("dragging");
+    if (!st || !st.moved) return;
+    const img = $("secFloorImage");
+    const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
+    const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
+    let px = parseFloat(d.dataset.bx) || 0, py = parseFloat(d.dataset.by) || 0;
+    // Nunca fuera de la pantalla.
+    if (visibleRect) {
+      px = Math.min(Math.max(px, visibleRect.x + 14 / scale), visibleRect.x + visibleRect.w - 14 / scale);
+      py = Math.min(Math.max(py, visibleRect.y + 14 / scale), visibleRect.y + visibleRect.h - 30 / scale);
+    }
+    const rec = dropRecord(px, py, w, h, drawingRect);
+    const p = (MAP.presence || []).find((x) => x.entity === d.dataset.entity);
+    const key = floorCfgKey(floorDetails[currentFloorId]);
+    if (!p || !key) return;
+    const before = { floor: p.floor, position: p.position, outside: p.outside, custom: p.custom };
+    Object.assign(p, { floor: key, position: [rec.x, rec.y], outside: rec.outside, custom: true });
+    renderPresence();
+    fit();
+    try {
+      const r = await fetch(root() + "/api/security/positions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entity_id: p.entity, floor: key, x: rec.x, y: rec.y, outside: rec.outside }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(r.status === 403 ? "Solo un administrador puede mover elementos" : (j.error || "HTTP " + r.status));
+      }
+      toast(rec.outside ? `${p.name}: guardado fuera del plano` : `${p.name}: posición guardada`);
+    } catch (err) {
+      Object.assign(p, before);
+      renderPresence();
+      fit();
+      toast("No se pudo guardar: " + (err && err.message ? err.message : err));
+    }
   }
 
   /** Estado de un sensor/cámara de presencia: "on" (detección), "off" (sin
@@ -528,6 +710,11 @@
     if (startPromise) return startPromise;
     startPromise = (async () => {
       bindPops();
+      const eb = $("secEditBtn");
+      if (eb && !eb.dataset.bound) {
+        eb.dataset.bound = "1";
+        eb.addEventListener("click", (e) => { e.stopPropagation(); setEditing(!editing); });
+      }
       if (window.HADomoticsPlan) await window.HADomoticsPlan.load();
       const r = await fetch(root() + "/api/security/map", { cache: "no-store" });
       if (!r.ok) { $("secEmpty").textContent = "No se pudo cargar la configuración de Seguridad."; return; }
@@ -558,6 +745,9 @@
     presenceState,
     setZonesOpen,
     setDetectionsOpen,
+    setEditing,
+    dropRecord,
+    get editing() { return editing; },
     get started() { return started; },
     get states() { return states; },
   };

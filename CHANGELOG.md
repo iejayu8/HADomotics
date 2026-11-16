@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.5.1
+
+### Added
+- **Mover elementos en Seguridad.** En el dock flotante de Seguridad hay un botón lápiz junto al selector de planta, en el mismo sitio y con el mismo estilo que en Dispositivos. Al pulsarlo entras en modo edición:
+  - Los sensores de movimiento y las cámaras se pueden arrastrar en cada planta, con ratón o con el dedo.
+  - Cada posición se guarda al soltar. Para salir, pulsa ✓.
+  - Las posiciones se guardan en la configuración del add-on (`security_positions`, en fracciones de la imagen) mediante `PUT /api/security/positions`, que es solo para administradores. A un usuario que no es administrador se le avisa y el marcador vuelve a su sitio.
+  - Las posiciones de siempre (`security_map.json`) son el valor por defecto mientras no muevas nada.
+- **Elementos fuera del plano, en Dispositivos y en Seguridad.** En modo edición puedes soltar un elemento en el fondo, fuera del dibujo; por ejemplo, los botones de escena Día y Noche.
+  - En modo edición, una línea discontinua marca el borde del dibujo y alrededor queda un margen de fondo donde soltar.
+  - El elemento se queda fuera, en la zona aproximada donde lo colocaste, con cualquier tamaño de pantalla. Si no cabe, el plano se reduce como mucho al 85 %; en pantallas pequeñas, el elemento se acerca lo justo para no salirse de la pantalla.
+  - El recorte de bordes blancos y la recolocación de 3.5.0 ya no devuelven al plano los elementos que has colocado tú. Solo se aplican a los elementos antiguos, que no tienen el campo `outside`.
+
+### Changed
+- En Dispositivos, el modo edición muestra el plano recortado igual que el modo vista, para que lo que colocas sea lo que ves.
+- Cada elemento de Dispositivos guarda un campo nuevo, `outside` (`true` o `false`), al soltarlo tras moverlo. Las coordenadas siguen en píxeles de la imagen y pueden ser negativas o pasar del borde. Pulsar un elemento sin moverlo no cambia nada de lo guardado.
+- La copia de seguridad y la restauración incluyen `security_positions`.
+- Las configuraciones guardadas siguen funcionando igual.
+
 ## 3.5.0
 
 ### Added

@@ -1,6 +1,6 @@
 HADomotics is a project structured into multiple components, including a backend module, a custom Lovelace card, and a test suite. This repository contains the source code, configuration files, and development assets for the project.
 
-Latest addon version: 3.5.0
+Latest addon version: 3.5.1
 
 **Access**
 
@@ -28,8 +28,19 @@ Close either with X, Esc, a click outside, or its button. The floor switcher is 
 
 Motion sensors and cameras are drawn on the same floor plans as Dispositivos, labelled with their name only. The icon colour shows the state: red for detection, green for no detection, dim grey for unavailable. The full state is in the marker's `aria-label` and `title`. The entities are listed in `hadomotics/security_map.json`.
 
+Since 3.5.1 the Seguridad dock has a pencil button next to the floor switcher, in the same place as the Edit button in Dispositivos. In edit mode you can drag motion sensors and cameras with a mouse or a finger. Each position is saved when you drop it; press ✓ to leave edit mode. Positions are stored in the add-on configuration under `security_positions` as fractions of the plan image, through the admin-only `PUT /api/security/positions`. Until you move a marker, the positions in `security_map.json` are used.
+
+**Elements outside the floor plan**
+
+In edit mode, in both Dispositivos and Seguridad, a dashed line marks the edge of the drawing and leaves a margin of background around it. Drop an element in that margin to keep it outside the drawing, for example the Día and Noche scene buttons. It stays outside, roughly where you put it, at any screen size. The plan shrinks to at most 85% to make room. On small screens the element moves only as much as it needs to stay on screen.
+
+How it is stored:
+- Dispositivos elements keep their pixel coordinates, which may now be negative or beyond the image edge, plus `outside: true` or `false`. The field is set when you drop an element after moving it.
+- Elements without the `outside` field are the older ones. Only they get the 3.5.0 crop clamp and relocation, so saved configurations keep working.
+- Backups include `security_positions`.
+
 Drawing overlays live in `hadomotics/plan_overlays.json`:
-- the white-border crop of each plan, applied only to the reference images and only in view mode;
+- the white-border crop of each plan, applied only to the reference images (since 3.5.1 also in edit mode, so what you place is what you see);
 - the HD versions of both plans;
 - the garage Tesla and the charger cable, shown only in Dispositivos; the cable animates when `sensor.evse_charging_power` is above 100 W.
 

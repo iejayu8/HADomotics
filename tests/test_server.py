@@ -1691,3 +1691,94 @@ def test_admin_arm_forwards_code_without_logging_it(client, caplog):
         tokens.close()
     assert "97531" not in caplog.text
     assert "97531" not in json.dumps(ok.get_json())
+
+
+# ---------------------------------------------------------------------------
+# 3.5.1 — mover elementos en Seguridad y elementos fuera del plano
+# ---------------------------------------------------------------------------
+
+_POS_ENTITY = "binary_sensor.sensormovimiento4"
+
+
+def _put_position(c, **body):
+    payload = {"entity_id": _POS_ENTITY, "floor": "planta_baja", "x": -0.04, "y": 0.5, "outside": True}
+    payload.update(body)
+    return c.put("/api/security/positions", data=json.dumps(payload), content_type="application/json")
+
+
+def test_admin_moves_security_marker_and_it_persists(client):
+    import server as srv
+    from unittest.mock import patch
+
+    with patch("server.requests.post") as mock_post:
+        r = _put_position(client)
+    assert r.status_code == 200
+    assert r.get_json()["outside"] is True
+    mock_post.assert_not_called()  # nunca se escribe en Home Assistant
+    stored = srv.load_config()["security_positions"][_POS_ENTITY]
+    assert stored == {"floor": "planta_baja", "x": -0.04, "y": 0.5, "outside": True}
+    p = next(p for p in client.get("/api/security/map").get_json()["presence"] if p["entity"] == _POS_ENTITY)
+    assert p["position"] == [-0.04, 0.5] and p["outside"] is True and p["custom"] is True
+    # Moverlo dentro otra vez.
+    assert _put_position(client, x=0.3, y=0.4, outside=False).status_code == 200
+    p = next(p for p in client.get("/api/security/map").get_json()["presence"] if p["entity"] == _POS_ENTITY)
+    assert p["position"] == [0.3, 0.4] and p["outside"] is False
+
+
+def test_security_map_defaults_without_saved_positions(client):
+    import security as sec
+
+    data = client.get("/api/security/map").get_json()
+    assert data["presence"] == sec.load_map()["presence"]
+
+
+def test_security_positions_validation(client):
+    assert _put_position(client, entity_id="binary_sensor.nope").status_code == 400
+    assert _put_position(client, floor="sotano").status_code == 400
+    assert _put_position(client, x=3).status_code == 400
+    assert _put_position(client, y=True).status_code == 400
+
+
+def test_only_admins_move_security_markers(ingress_member, lan_client):
+    import server as srv
+
+    assert _put_position(ingress_member).status_code == 403
+    assert _put_position(lan_client).status_code == 401
+    assert "security_positions" not in srv.load_config()
+
+
+def test_element_outside_flag_and_negative_coordinates(client):
+    floor = client.post("/api/floors", data=json.dumps({"name": "PB"}), content_type="application/json").get_json()
+    el = client.post(
+        f"/api/floors/{floor['id']}/elements",
+        data=json.dumps({"type": "scene", "entity_id": "scene.dia", "x": 10, "y": 10}),
+        content_type="application/json",
+    ).get_json()
+    # Elemento antiguo: sin campo «outside».
+    assert "outside" not in el
+    r = client.put(
+        f"/api/floors/{floor['id']}/elements/{el['id']}",
+        data=json.dumps({"x": -42.5, "y": 790, "outside": 1}),
+        content_type="application/json",
+    )
+    assert r.status_code == 200
+    got = r.get_json()
+    assert got["x"] == -42.5 and got["y"] == 790 and got["outside"] is True
+    r = client.put(
+        f"/api/floors/{floor['id']}/elements/{el['id']}",
+        data=json.dumps({"x": 100, "y": 100, "outside": False}),
+        content_type="application/json",
+    )
+    assert r.get_json()["outside"] is False
+
+
+def test_backup_restore_keeps_security_positions(client):
+    import server as srv
+
+    assert _put_position(client).status_code == 200
+    backup = client.get("/api/backup").get_json()
+    assert backup["security_positions"][_POS_ENTITY]["outside"] is True
+    srv.save_config({"floors": []})
+    r = client.post("/api/restore", data=json.dumps(backup), content_type="application/json")
+    assert r.status_code == 200
+    assert srv.load_config()["security_positions"][_POS_ENTITY]["x"] == -0.04
