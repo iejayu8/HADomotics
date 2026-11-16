@@ -91,11 +91,17 @@ test("alarm code is asked only when Alarmo requires it", () => {
   assert.equal(sec.needsCode("alarm_arm_away", numArm), true);
 });
 
-test("presence text shows the last change in Madrid time", () => {
+test("presence: three states, full text only for aria/title and the dropdown", () => {
   const { sec } = load();
-  const t = sec.presenceText({ name: "Cocina" }, { state: "on", last_changed: new Date().toISOString() });
-  assert.match(t, /^Cocina: PERSONA · \d{2}:\d{2}$/);
-  assert.equal(sec.presenceText({ name: "Baño" }, { state: "unavailable" }), "Baño: no disponible");
+  const now = new Date().toISOString();
+  assert.equal(sec.presenceState({ state: "on" }), "on");
+  assert.equal(sec.presenceState({ state: "off" }), "off");
+  assert.equal(sec.presenceState({ state: "unavailable" }), "na");
+  assert.equal(sec.presenceState({ state: "unknown" }), "na");
+  assert.equal(sec.presenceState(undefined), "na");
+  assert.match(sec.presenceText({ name: "Cocina / comedor" }, { state: "on", last_changed: now }), /^Cocina \/ comedor: Detección · \d{2}:\d{2}$/);
+  assert.match(sec.presenceText({ name: "Estar" }, { state: "off", last_changed: now }), /^Estar: Sin detección · \d{2}:\d{2}$/);
+  assert.equal(sec.presenceText({ name: "Baño" }, { state: "unavailable" }), "Baño: No disponible");
 });
 
 test("white-border crop only applies to the reference image size", () => {
@@ -142,11 +148,35 @@ test("Seguridad layout: alarm card + Zonas popover, same floor dock, nav order",
   for (const gone of ["secOpen", "secSiren", "secPresence", "sec-side"]) assert.doesNotMatch(pane, new RegExp(gone));
   // Coche y cable solo en Dispositivos.
   assert.doesNotMatch(secSrc, /HADomoticsPlan\.render\(/);
-  assert.match(secSrc, /e\.key === "Escape"/);
+  assert.match(secSrc, /e\.key !== "Escape"/);
   const navStart = html.indexOf('id="appNav"');
   const nav = html.slice(navStart, html.indexOf("</nav>", navStart));
   const order = [...nav.matchAll(/data-app="(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(order, ["seguridad", "dispositivos", "energia"]);
+});
+
+test("Detecciones: discreet button next to Zonas, one popover at a time, three colours", () => {
+  const html = fs.readFileSync(path.join(STATIC, "index.html"), "utf8");
+  const secSrc = fs.readFileSync(path.join(STATIC, "seguridad", "js", "security.js"), "utf8");
+  const css = fs.readFileSync(path.join(STATIC, "seguridad", "css", "security.css"), "utf8");
+  const tools = html.slice(html.indexOf('class="sec-tools"'), html.indexOf('id="secCanvasWrapper"'));
+  assert.ok(tools.indexOf('id="secZonesBtn"') > 0);
+  assert.ok(tools.indexOf('id="secZonesBtn"') < tools.indexOf('id="secDetBtn"'));
+  assert.match(tools, /class="sec-det-btn sec-tool-btn" id="secDetBtn"[^>]*aria-haspopup="dialog"/);
+  assert.match(html, /id="secDetPop"[^>]*role="dialog"/);
+  assert.match(html, /id="secDetClose"[^>]*aria-label="Cerrar"/);
+  // En el plano solo el nombre; el estado completo en aria-label/title.
+  assert.match(secSrc, /<span class="tag" aria-hidden="true">\$\{esc\(p\.name\)\}<\/span>/);
+  assert.match(secSrc, /d\.setAttribute\("aria-label", full\)/);
+  assert.doesNotMatch(secSrc, /PERSONA/);
+  // Abrir uno cierra el otro; botón otra vez, X, Esc y clic fuera cierran.
+  assert.match(secSrc, /if \(open\) Object\.keys\(POPS\)\.forEach\(\(other\) => \{ if \(other !== name\) setPopOpen\(other, false\); \}\)/);
+  assert.match(secSrc, /setPopOpen\(name, !isOpen\(name\)\)/);
+  assert.match(secSrc, /card && card\.contains\(e\.target\)/);
+  for (const v of ["--pres-on: #ef4444", "--pres-off: #22c55e", "--pres-na: #64748b"]) assert.ok(css.includes(v), v);
+  assert.match(css, /\.presence\.on \.dot \{[^}]*var\(--pres-on\)/);
+  assert.match(css, /\.presence\.off \.dot \{[^}]*var\(--pres-off\)/);
+  assert.match(css, /\.presence\.unavailable \.dot \{[^}]*var\(--pres-na\)/);
 });
 
 test("sources: no stored alarm code, cable is non-interactive and respects reduced motion", () => {

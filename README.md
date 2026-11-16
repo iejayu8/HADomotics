@@ -20,7 +20,13 @@ Updating from 3.3.0 keeps the same slug, so the installed add-on updates in plac
 
 **Seguridad**
 
-Since 3.5.0 the bottom buttons are **Seguridad**, **Dispositivos** and **Energía**, in that order. Seguridad shows the Alarmo panel as a single card centred above the floor plan, where you can arm or disarm the alarm. Each mode asks for confirmation, and asks for the code only when Alarmo requires one; the code is never stored. A small **Zonas** button next to the card shows the alarm zones in an overlay. The floor switcher is the same floating dock as in Dispositivos. Motion and person detection are drawn on the same floor plans as Dispositivos. The entities are listed in `hadomotics/security_map.json`.
+Since 3.5.0 the bottom buttons are **Seguridad**, **Dispositivos** and **Energía**, in that order. Seguridad shows the Alarmo panel as a single card centred above the floor plan, where you can arm or disarm the alarm. Each mode asks for confirmation, and asks for the code only when Alarmo requires one; the code is never stored. Two small buttons next to the card open overlays, one at a time:
+- **Zonas** shows the alarm zones.
+- **Detecciones** shows a counter of active detections and lists every motion sensor and camera with its state and last change in Madrid time.
+
+Close either with X, Esc, a click outside, or its button. The floor switcher is the same floating dock as in Dispositivos.
+
+Motion sensors and cameras are drawn on the same floor plans as Dispositivos, labelled with their name only. The icon colour shows the state: red for detection, green for no detection, dim grey for unavailable. The full state is in the marker's `aria-label` and `title`. The entities are listed in `hadomotics/security_map.json`.
 
 Drawing overlays live in `hadomotics/plan_overlays.json`:
 - the white-border crop of each plan, applied only to the reference images and only in view mode;

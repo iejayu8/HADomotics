@@ -293,9 +293,14 @@
             <div class="sec-modes" id="secModes"></div>
           </div>
         </section>
-        <button type="button" class="sec-zones-btn" id="secZonesBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="secZonesPop">
-          <span class="material-icons">grid_view</span><span class="lbl">Zonas</span><span class="badge" id="secZonesBadge"></span>
-        </button>
+        <div class="sec-tools">
+          <button type="button" class="sec-zones-btn sec-tool-btn" id="secZonesBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="secZonesPop">
+            <span class="material-icons">grid_view</span><span class="lbl">Zonas</span><span class="badge" id="secZonesBadge"></span>
+          </button>
+          <button type="button" class="sec-det-btn sec-tool-btn" id="secDetBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="secDetPop">
+            <span class="material-icons">sensors</span><span class="lbl">Detecciones</span><span class="badge" id="secDetBadge"></span>
+          </button>
+        </div>
       </div>
       <div class="sec-canvas-wrapper" id="secCanvasWrapper">
         <div class="sec-empty" id="secEmpty">Cargando planos…</div>
@@ -309,13 +314,24 @@
       <div class="floor-switcher" id="secFloorSwitcher"></div>
     </div>
 
-    <div class="sec-pop hidden" id="secZonesPop" role="dialog" aria-modal="true" aria-labelledby="secZonesTitle">
+    <div class="sec-pop hidden" id="secZonesPop" role="dialog" aria-modal="false" aria-labelledby="secZonesTitle">
       <div class="sec-pop-card">
         <header>
           <div><h3 id="secZonesTitle">Zonas de la alarma</h3><div class="sub" id="secZonesSub"></div></div>
           <button type="button" class="sec-pop-close" id="secZonesClose" aria-label="Cerrar"><span class="material-icons">close</span></button>
         </header>
         <div class="sec-zones" id="secZones"></div>
+      </div>
+    </div>
+
+    <div class="sec-pop hidden" id="secDetPop" role="dialog" aria-modal="false" aria-labelledby="secDetTitle">
+      <div class="sec-pop-card">
+        <header>
+          <div><h3 id="secDetTitle">Detecciones</h3><div class="sub" id="secDetSub"></div></div>
+          <button type="button" class="sec-pop-close" id="secDetClose" aria-label="Cerrar"><span class="material-icons">close</span></button>
+        </header>
+        <div class="det-legend" aria-hidden="true"><span class="on">Detección</span><span class="off">Sin detección</span><span class="na">No disponible</span></div>
+        <div id="secDetList"></div>
       </div>
     </div>
 

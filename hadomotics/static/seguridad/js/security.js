@@ -266,31 +266,81 @@
       d.dataset.entity = p.entity;
       d.style.left = px.toFixed(1) + "px";
       d.style.top = py.toFixed(1) + "px";
-      d.innerHTML = `<span class="dot"><span class="material-icons">${p.exterior ? "videocam" : "directions_run"}</span></span><span class="tag"></span>`;
+      d.setAttribute("role", "img");
+      d.innerHTML = `<span class="dot" aria-hidden="true"><span class="material-icons">${p.exterior ? "videocam" : "directions_run"}</span></span><span class="tag" aria-hidden="true">${esc(p.name)}</span>`;
       canvas.appendChild(d);
     });
     updatePresence();
   }
 
+  /** Estado de un sensor/cámara de presencia: "on" (detección), "off" (sin
+   *  detección) o "na" (no disponible / sin datos). */
+  function presenceState(s) {
+    if (!s || s.state === "unavailable" || s.state === "unknown") return "na";
+    return s.state === "on" ? "on" : "off";
+  }
+  const PRESENCE_LABEL = { on: "Detección", off: "Sin detección", na: "No disponible" };
+
+  /** Texto completo (aria-label / title / desplegable): nombre, estado y hora. */
   function presenceText(p, s) {
-    if (!s) return `${p.name}: sin datos`;
-    if (s.state === "unavailable" || s.state === "unknown") return `${p.name}: no disponible`;
-    const on = s.state === "on";
-    return `${p.name}: ${on ? "PERSONA" : "libre"} · ${madridTime(s.last_changed)}`;
+    const st = presenceState(s);
+    const t = st === "na" ? "" : madridTime(s && s.last_changed);
+    return `${p.name}: ${PRESENCE_LABEL[st]}${t ? " · " + t : ""}`;
   }
 
+  /** En el plano solo el nombre; el estado es el color del icono. */
   function updatePresence() {
     const canvas = $("secCanvas");
     if (!canvas || !MAP) return;
     canvas.querySelectorAll(".presence").forEach((d) => {
       const p = (MAP.presence || []).find((x) => x.entity === d.dataset.entity);
-      const s = states[d.dataset.entity];
-      d.classList.toggle("on", !!s && s.state === "on");
-      d.classList.toggle("unavailable", !s || s.state === "unavailable" || s.state === "unknown");
-      const tag = d.querySelector(".tag");
-      if (tag && p) tag.textContent = presenceText(p, s).replace(/^[^:]+: /, p.name + " · ");
-      d.title = p ? presenceText(p, s) : "";
+      const st = presenceState(states[d.dataset.entity]);
+      d.classList.toggle("on", st === "on");
+      d.classList.toggle("off", st === "off");
+      d.classList.toggle("unavailable", st === "na");
+      const full = p ? presenceText(p, states[d.dataset.entity]) : "";
+      d.title = full;
+      d.setAttribute("aria-label", full);
     });
+  }
+
+  function detectionCounts() {
+    const list = (MAP && MAP.presence) || [];
+    const on = list.filter((p) => presenceState(states[p.entity]) === "on").length;
+    return { on, total: list.length };
+  }
+
+  const FLOOR_LABEL = { planta_baja: "Planta baja", planta_1: "Planta 1" };
+
+  function renderDetections() {
+    const c = detectionCounts();
+    const badge = $("secDetBadge");
+    if (badge) badge.textContent = c.on ? String(c.on) : "";
+    const btn = $("secDetBtn");
+    if (btn) btn.classList.toggle("alert", c.on > 0);
+    const sub = $("secDetSub");
+    if (sub) sub.textContent = c.on === 1 ? "1 detección activa" : `${c.on} detecciones activas`;
+    const box = $("secDetList");
+    if (!box || !MAP || $("secDetPop").classList.contains("hidden")) return;
+    const groups = {};
+    (MAP.presence || []).forEach((p) => { (groups[p.floor] = groups[p.floor] || []).push(p); });
+    // Primero la planta que se está viendo.
+    const curKey = floorCfgKey(floorDetails[currentFloorId]);
+    const order = Object.keys(groups).sort((a, b) => (b === curKey) - (a === curKey));
+    const html = order.map((fl) => `
+      <div class="det-floor">${esc(FLOOR_LABEL[fl] || fl)}</div>
+      <ul class="det-list">${groups[fl].map((p) => {
+        const s = states[p.entity];
+        const st = presenceState(s);
+        const t = st === "na" ? "—" : madridTime(s && s.last_changed);
+        return `<li class="det-item ${st}" title="${esc(p.entity)}">
+          <span class="det-dot" aria-hidden="true"><span class="material-icons">${p.exterior ? "videocam" : "directions_run"}</span></span>
+          <span class="det-name">${esc(p.name)}</span>
+          <span class="det-state">${esc(PRESENCE_LABEL[st])}</span>
+          <span class="det-time">${esc(t)}</span>
+        </li>`;
+      }).join("")}</ul>`).join("");
+    if (box.innerHTML !== html && box.dataset.sig !== html) { box.innerHTML = html; box.dataset.sig = html; }
   }
 
   // ---------------------------------------------------------------- Panels
@@ -350,36 +400,64 @@
     if (sub) sub.textContent = c.total ? `${c.on} de ${c.total} activas` : "";
   }
 
-  // ------------------------------------------------------- Zonas (superpuesto)
-  function setZonesOpen(open) {
-    const pop = $("secZonesPop");
-    const btn = $("secZonesBtn");
+  // ------------------------------------- Zonas / Detecciones (desplegables)
+  // Solo uno abierto a la vez. Se cierran con la X, Esc, un clic fuera o
+  // volviendo a pulsar su botón.
+  const POPS = {
+    zonas: { pop: "secZonesPop", btn: "secZonesBtn", close: "secZonesClose", render: () => renderZones() },
+    detecciones: { pop: "secDetPop", btn: "secDetBtn", close: "secDetClose", render: () => renderDetections() },
+  };
+
+  function isOpen(name) {
+    const pop = $(POPS[name].pop);
+    return !!pop && !pop.classList.contains("hidden");
+  }
+
+  function setPopOpen(name, open) {
+    const cfg = POPS[name];
+    const pop = cfg && $(cfg.pop);
+    const btn = cfg && $(cfg.btn);
     if (!pop || !btn) return;
+    if (open) Object.keys(POPS).forEach((other) => { if (other !== name) setPopOpen(other, false); });
     pop.classList.toggle("hidden", !open);
     btn.setAttribute("aria-expanded", open ? "true" : "false");
     if (open) {
-      renderZones();
-      const close = $("secZonesClose");
+      cfg.render();
+      const close = $(cfg.close);
       if (close) setTimeout(() => close.focus(), 0);
     } else if (document.activeElement && pop.contains(document.activeElement)) {
       btn.focus();
     }
   }
 
-  function bindZones() {
-    const btn = $("secZonesBtn");
-    const pop = $("secZonesPop");
-    if (!btn || !pop || btn.dataset.bound) return;
-    btn.dataset.bound = "1";
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      setZonesOpen(pop.classList.contains("hidden"));
+  function setZonesOpen(open) { setPopOpen("zonas", open); }
+  function setDetectionsOpen(open) { setPopOpen("detecciones", open); }
+
+  function bindPops() {
+    if (bindPops.done) return;
+    let any = false;
+    Object.keys(POPS).forEach((name) => {
+      const cfg = POPS[name];
+      const btn = $(cfg.btn), pop = $(cfg.pop), close = $(cfg.close);
+      if (!btn || !pop) return;
+      any = true;
+      btn.addEventListener("click", (e) => { e.stopPropagation(); setPopOpen(name, !isOpen(name)); });
+      if (close) close.addEventListener("click", () => setPopOpen(name, false));
     });
-    $("secZonesClose").addEventListener("click", () => setZonesOpen(false));
-    // Clic fuera de la tarjeta (en el fondo) la cierra.
-    pop.addEventListener("click", (e) => { if (e.target === pop) setZonesOpen(false); });
+    if (!any) return;
+    bindPops.done = true;
+    // Clic fuera de la tarjeta abierta (y de los botones) la cierra.
+    document.addEventListener("click", (e) => {
+      Object.keys(POPS).forEach((name) => {
+        if (!isOpen(name)) return;
+        const card = $(POPS[name].pop).querySelector(".sec-pop-card");
+        if (card && card.contains(e.target)) return;
+        setPopOpen(name, false);
+      });
+    });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !pop.classList.contains("hidden")) setZonesOpen(false);
+      if (e.key !== "Escape") return;
+      Object.keys(POPS).forEach((name) => { if (isOpen(name)) setPopOpen(name, false); });
     });
   }
 
@@ -387,6 +465,7 @@
     renderAlarm();
     renderZones();
     updatePresence();
+    renderDetections();
   }
 
   // ---------------------------------------------------------------- Actions
@@ -448,7 +527,7 @@
   async function start() {
     if (startPromise) return startPromise;
     startPromise = (async () => {
-      bindZones();
+      bindPops();
       if (window.HADomoticsPlan) await window.HADomoticsPlan.load();
       const r = await fetch(root() + "/api/security/map", { cache: "no-store" });
       if (!r.ok) { $("secEmpty").textContent = "No se pudo cargar la configuración de Seguridad."; return; }
@@ -476,7 +555,9 @@
     needsCode,
     madridTime,
     presenceText,
+    presenceState,
     setZonesOpen,
+    setDetectionsOpen,
     get started() { return started; },
     get states() { return states; },
   };

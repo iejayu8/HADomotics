@@ -951,6 +951,9 @@ body.view-mode-active .toast-container {
 }
 
 body.app-energia .app-header,
+/* Seguridad muestra su propio estado de conexión en el Panel de Alarma */
+body.app-seguridad .ha-conn-indicator-fixed { display: none !important; }
+
 body.app-seguridad .app-header {
   display: none;
 }

@@ -8,9 +8,14 @@
     - Cada modo pide confirmación.
     - El código se pide solo si `code_format` lo exige (para armar, además, `code_arm_required`). Nunca se guarda y se borra al cerrar el diálogo.
     - Si Alarmo informa de sensores abiertos, la tarjeta indica cuántos hay.
-  - A la derecha de la tarjeta, un botón discreto **Zonas** muestra superpuestas las 12 zonas (`input_boolean.notificacion_alarma_*`). Se cierra con la X, con Esc o pulsando fuera.
+  - A la derecha de la tarjeta, un botón discreto **Zonas** muestra superpuestas las 12 zonas (`input_boolean.notificacion_alarma_*`). Se cierra con la X, con Esc, pulsando fuera o pulsando otra vez el botón.
   - El selector de planta va en el mismo dock flotante que en Dispositivos.
-  - **Detección dinámica en el plano.** Cada sensor de movimiento y cada cámara con detección de personas se dibuja en su habitación. Se ilumina y late cuando detecta, y muestra su último cambio en hora de Madrid.
+  - **Detección dinámica en el plano.** Cada sensor de movimiento y cada cámara con detección de personas se dibuja en su habitación, rotulado solo con su nombre (por ejemplo «Cocina / comedor»).
+    - El estado se ve por el color del icono: rojo `#ef4444` cuando hay detección (con un pulso suave), verde `#22c55e` cuando no la hay y gris apagado `#64748b` cuando no está disponible.
+    - El estado completo y la hora del último cambio están en `aria-label` y en `title`.
+  - Junto a «Zonas», un botón discreto **Detecciones** con el número de detecciones activas despliega la lista de sensores y cámaras: nombre, estado con su color y último cambio en hora de Madrid. Primero aparece la planta que estás viendo.
+    - Se cierra con la X, con Esc, pulsando fuera o pulsando otra vez el botón.
+    - «Zonas» y «Detecciones» nunca se abren a la vez: al abrir uno se cierra el otro.
 - Dentro de Home Assistant, las llamadas a la alarma se hacen como tu usuario (`hass.callService`). Fuera, van a `POST /api/security/alarm`, que es solo para administradores y solo admite la entidad de alarma mapeada y los modos que anuncia. La lectura (`/api/security/map`, `/api/security/state`, `/api/plan/overlays`) también está abierta a usuarios de ingress que no son administradores.
 - **Tesla Model Y Juniper (2025) gris en el garaje de Dispositivos.** Es una imagen realista vista desde arriba, con fondo transparente, sombra suave y la misma luz que el plano (`static/plans/tesla_model_y.webp`). Forma parte del dibujo: no se puede pulsar.
 - **Cable del cargador Deye al puerto de carga** (trasera izquierda del coche), solo en Dispositivos.
