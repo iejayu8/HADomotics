@@ -1,4 +1,10 @@
-/* HADomotics Seguridad — alarma Alarmo, zonas, sirena y presencia en los planos.
+/* HADomotics Seguridad — alarma Alarmo, zonas y presencia en los planos.
+ *
+ * Pantalla: tarjeta «Panel de Alarma» centrada sobre el plano, botón «Zonas»
+ * a su derecha (superpone el detalle de zonas) y el selector de planta en el
+ * mismo dock flotante que Dispositivos. El plano ocupa el resto, recortado a
+ * su dibujo (sin bordes blancos). El coche y el cable de carga solo se dibujan
+ * en Dispositivos.
  *
  * Mismo patrón que Energía: dentro de Home Assistant lee el objeto hass del
  * usuario y actúa con hass.callService (permisos de ese usuario); fuera, lee
@@ -100,15 +106,7 @@
     const out = new Set();
     if (MAP.alarm && MAP.alarm.entity) out.add(MAP.alarm.entity);
     (MAP.zones || []).forEach((z) => out.add(z.entity));
-    if (MAP.siren) {
-      out.add(MAP.siren.entity);
-      (MAP.siren.extra || []).forEach((x) => out.add(x.entity));
-    }
     (MAP.presence || []).forEach((p) => out.add(p.entity));
-    const ov = window.HADomoticsPlan ? window.HADomoticsPlan.overlays : null;
-    ((ov && ov.floors) || []).forEach((f) => {
-      if (f.evse_cable) { out.add(f.evse_cable.power_entity); out.add(f.evse_cable.state_entity); }
-    });
     return [...out].filter(Boolean);
   }
 
@@ -153,7 +151,7 @@
       const b = document.createElement("button");
       b.type = "button";
       b.textContent = f.name;
-      b.className = f.id === currentFloorId ? "active" : "";
+      b.className = "floor-btn" + (f.id === currentFloorId ? " active" : "");
       b.onclick = () => selectFloor(f.id);
       box.appendChild(b);
     });
@@ -197,17 +195,26 @@
       const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
       img.style.width = w + "px";
       img.style.height = h + "px";
-      if (window.HADomoticsPlan) {
-        window.HADomoticsPlan.render(canvas, floor, floors, w, h);
-        window.HADomoticsPlan.update(canvas, floor, floors, states);
-      }
+      // El coche y el cable de carga solo van en Dispositivos.
+      const old = canvas.querySelector(":scope > svg.plan-overlay");
+      if (old) old.remove();
       renderPresence();
       fit();
     };
     img.src = originalSrc;
   }
 
-  /** Mismo ajuste "contain" centrado que Dispositivos (PR #19). */
+  /** Recorte de bordes blancos de la planta actual (mismo que Dispositivos). */
+  function currentCrop() {
+    const img = $("secFloorImage");
+    const floor = floorDetails[currentFloorId];
+    if (!img || !floor || !window.HADomoticsPlan) return null;
+    const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
+    const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
+    return w && h ? window.HADomoticsPlan.cropFor(floor, floors, w, h) : null;
+  }
+
+  /** Mismo ajuste "contain" centrado que Dispositivos (PR #19), sobre el recorte. */
   function fit() {
     const wrap = $("secCanvasWrapper");
     const canvas = $("secCanvas");
@@ -215,17 +222,22 @@
     if (!wrap || !canvas || !img || !img.naturalWidth || canvas.hidden) return;
     const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
     const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
-    const aw = wrap.clientWidth, ah = wrap.clientHeight;
+    // Margen lateral: las cámaras exteriores quedan en el borde del dibujo.
+    const margin = 18;
+    const aw = wrap.clientWidth - 2 * margin, ah = wrap.clientHeight;
     if (aw <= 0 || ah <= 0) return;
-    scale = Math.min(aw / w, ah / h);
-    const ox = Math.max(0, (aw - w * scale) / 2);
-    const oy = Math.max(0, (ah - h * scale) / 2);
+    const crop = currentCrop();
+    const view = crop || { x: 0, y: 0, w, h };
+    img.style.clipPath = crop ? window.HADomoticsPlan.clipInset(crop) : "";
+    scale = Math.min(aw / view.w, ah / view.h);
+    const ox = margin + Math.max(0, (aw - view.w * scale) / 2) - view.x * scale;
+    const oy = Math.max(0, (ah - view.h * scale) / 2) - view.y * scale;
     canvas.style.width = w + "px";
     canvas.style.height = h + "px";
     canvas.style.transform = `translate(${ox}px, ${oy}px) scale(${scale})`;
     canvas.style.setProperty("--sec-inv", String(Math.min(3.5, Math.max(1, 1 / scale))));
     // Plano pequeño (móvil): solo se rotulan los sensores con persona; el resto, en la lista.
-    canvas.classList.toggle("compact", w * scale < 640);
+    canvas.classList.toggle("compact", view.w * scale < 640);
   }
 
   function renderPresence() {
@@ -238,14 +250,22 @@
     if (!key) return;
     const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
     const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
+    const crop = currentCrop();
+    const view = crop || { x: 0, y: 0, w, h };
     (MAP.presence || []).forEach((p) => {
       if (p.floor !== key || !Array.isArray(p.position)) return;
       const d = document.createElement("div");
-      const edge = p.position[0] < 0.15 ? " tag-start" : p.position[0] > 0.85 ? " tag-end" : "";
+      // Las cámaras exteriores (pegadas al borde de la imagen) se dejan en el
+      // borde del dibujo recortado.
+      const [px, py] = window.HADomoticsPlan
+        ? window.HADomoticsPlan.clampPoint(p.position[0] * w, p.position[1] * h, crop, 0)
+        : [p.position[0] * w, p.position[1] * h];
+      const fx = (px - view.x) / view.w;
+      const edge = fx < 0.15 ? " tag-start" : fx > 0.85 ? " tag-end" : "";
       d.className = "presence" + (p.exterior ? " exterior" : "") + edge;
       d.dataset.entity = p.entity;
-      d.style.left = (p.position[0] * w).toFixed(1) + "px";
-      d.style.top = (p.position[1] * h).toFixed(1) + "px";
+      d.style.left = px.toFixed(1) + "px";
+      d.style.top = py.toFixed(1) + "px";
       d.innerHTML = `<span class="dot"><span class="material-icons">${p.exterior ? "videocam" : "directions_run"}</span></span><span class="tag"></span>`;
       canvas.appendChild(d);
     });
@@ -271,8 +291,6 @@
       if (tag && p) tag.textContent = presenceText(p, s).replace(/^[^:]+: /, p.name + " · ");
       d.title = p ? presenceText(p, s) : "";
     });
-    const floor = floorDetails[currentFloorId];
-    if (window.HADomoticsPlan && floor) window.HADomoticsPlan.update(canvas, floor, floors, states);
   }
 
   // ---------------------------------------------------------------- Panels
@@ -288,6 +306,8 @@
     if (a.changed_by) meta.push("por " + a.changed_by);
     if (s && s.last_changed) meta.push(madridTime(s.last_changed));
     if (a.code_format) meta.push("pide código");
+    const open = a.open_sensors && typeof a.open_sensors === "object" ? Object.keys(a.open_sensors).length : 0;
+    if (open) meta.push(open === 1 ? "1 sensor abierto" : `${open} sensores abiertos`);
     $("secAlarmMeta").textContent = meta.join(" · ");
     const modes = availableModes(s, MAP.alarm.modes);
     const wrap = $("secModes");
@@ -308,6 +328,12 @@
     }
   }
 
+  function zoneCounts() {
+    const zones = (MAP && MAP.zones) || [];
+    const on = zones.filter((z) => states[z.entity] && states[z.entity].state === "on").length;
+    return { on, total: zones.length };
+  }
+
   function renderZones() {
     const box = $("secZones");
     if (!box || !MAP) return;
@@ -317,54 +343,49 @@
       const na = !s || s.state === "unavailable";
       return `<div class="zone${on ? " on" : ""}" title="${esc(z.entity)}"><span class="material-icons">${on ? "notifications_active" : "notifications_off"}</span>${esc(z.name)}${na ? " (n/d)" : ""}</div>`;
     }).join("");
+    const c = zoneCounts();
+    const badge = $("secZonesBadge");
+    if (badge) badge.textContent = c.total ? `${c.on}/${c.total}` : "";
+    const sub = $("secZonesSub");
+    if (sub) sub.textContent = c.total ? `${c.on} de ${c.total} activas` : "";
   }
 
-  function renderOpen() {
-    const ul = $("secOpen");
-    if (!ul || !MAP) return;
-    const items = [];
-    const alarm = states[MAP.alarm && MAP.alarm.entity];
-    const open = alarm && alarm.attributes && alarm.attributes.open_sensors;
-    if (alarm && alarm.state === "triggered") items.push(`<li class="on"><span>Alarma</span><span class="v">DISPARADA</span></li>`);
-    if (open && typeof open === "object") {
-      Object.keys(open).forEach((eid) => items.push(`<li class="on"><span>${esc(eid)}</span><span class="v">${esc(open[eid])}</span></li>`));
+  // ------------------------------------------------------- Zonas (superpuesto)
+  function setZonesOpen(open) {
+    const pop = $("secZonesPop");
+    const btn = $("secZonesBtn");
+    if (!pop || !btn) return;
+    pop.classList.toggle("hidden", !open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) {
+      renderZones();
+      const close = $("secZonesClose");
+      if (close) setTimeout(() => close.focus(), 0);
+    } else if (document.activeElement && pop.contains(document.activeElement)) {
+      btn.focus();
     }
-    (MAP.presence || []).forEach((p) => {
-      const s = states[p.entity];
-      if (s && s.state === "on") items.push(`<li class="on"><span>${esc(p.name)}</span><span class="v">persona · ${esc(madridTime(s.last_changed))}</span></li>`);
+  }
+
+  function bindZones() {
+    const btn = $("secZonesBtn");
+    const pop = $("secZonesPop");
+    if (!btn || !pop || btn.dataset.bound) return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setZonesOpen(pop.classList.contains("hidden"));
     });
-    ul.innerHTML = items.length ? items.join("") : `<li class="muted"><span>Ninguno</span><span class="v">—</span></li>`;
-  }
-
-  function renderSiren() {
-    const ul = $("secSiren");
-    if (!ul || !MAP || !MAP.siren) return;
-    const rows = [{ entity: MAP.siren.entity, name: MAP.siren.name }].concat(MAP.siren.extra || []);
-    ul.innerHTML = rows.map((r) => {
-      const s = states[r.entity];
-      const v = s ? s.state : "sin datos";
-      const on = r.entity.startsWith("siren.") && v === "on";
-      return `<li class="${on ? "on" : ""}"><span>${esc(r.name)}</span><span class="v">${esc(v === "on" ? "ON" : v === "off" ? "OFF" : v)}</span></li>`;
-    }).join("");
-  }
-
-  function renderPresenceList() {
-    const ul = $("secPresence");
-    if (!ul || !MAP) return;
-    ul.innerHTML = (MAP.presence || []).map((p) => {
-      const s = states[p.entity];
-      const on = s && s.state === "on";
-      const v = !s ? "sin datos" : s.state === "unavailable" ? "no disponible" : (on ? "persona" : "libre") + " · " + madridTime(s.last_changed);
-      return `<li class="${on ? "on" : ""}"><span>${esc(p.name)}</span><span class="v">${esc(v)}</span></li>`;
-    }).join("");
+    $("secZonesClose").addEventListener("click", () => setZonesOpen(false));
+    // Clic fuera de la tarjeta (en el fondo) la cierra.
+    pop.addEventListener("click", (e) => { if (e.target === pop) setZonesOpen(false); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !pop.classList.contains("hidden")) setZonesOpen(false);
+    });
   }
 
   function renderAll() {
     renderAlarm();
     renderZones();
-    renderOpen();
-    renderSiren();
-    renderPresenceList();
     updatePresence();
   }
 
@@ -427,6 +448,7 @@
   async function start() {
     if (startPromise) return startPromise;
     startPromise = (async () => {
+      bindZones();
       if (window.HADomoticsPlan) await window.HADomoticsPlan.load();
       const r = await fetch(root() + "/api/security/map", { cache: "no-store" });
       if (!r.ok) { $("secEmpty").textContent = "No se pudo cargar la configuración de Seguridad."; return; }
@@ -454,6 +476,7 @@
     needsCode,
     madridTime,
     presenceText,
+    setZonesOpen,
     get started() { return started; },
     get states() { return states; },
   };

@@ -4,8 +4,13 @@
  * - Dibuja elementos fijos del plano (Tesla Model Y gris y cable del cargador)
  *   en un SVG con pointer-events: none, en coordenadas de la imagen.
  * - Anima el cable (flujo verde hacia el coche) cuando el EVSE carga.
- * - Sustituye la imagen de Planta 1 por su versión HD si es la misma imagen
+ * - Sustituye la imagen de la planta por su versión HD si es la misma imagen
  *   (mismo tamaño), manteniendo el sistema de coordenadas original.
+ * - Recorta los bordes blancos de los planos (cropFor) sin tocar los ficheros:
+ *   el recorte es una fracción de la imagen y solo se aplica si la imagen es
+ *   la de referencia (mismo tamaño base). Los elementos siguen en píxeles de
+ *   la imagen original; los que caen fuera del recorte se recolocan solo al
+ *   mostrarlos (placeInCrop), sin cambiar lo guardado.
  */
 "use strict";
 
@@ -149,7 +154,17 @@
     svg.style.pointerEvents = "none";
     svg.dataset.floorKey = cfg.key;
 
-    if (cfg.tesla) {
+    if (cfg.tesla && cfg.tesla.src) {
+      // Imagen realista (PNG/WebP con transparencia) en el rectángulo del garaje.
+      const t = cfg.tesla;
+      const href = panelRoot() + "/" + String(t.src).replace(/^\/+/, "");
+      const car = el("image", {
+        x: String(t.x * width), y: String(t.y * height),
+        width: String(t.w * width), height: String(t.h * height),
+        preserveAspectRatio: "none", class: "plan-tesla-img", href,
+      });
+      svg.appendChild(car);
+    } else if (cfg.tesla) {
       const t = cfg.tesla;
       const x = t.x * width, y = t.y * height, w = t.w * width, h = t.h * height;
       const car = el("svg", {
@@ -163,9 +178,10 @@
       const c = cfg.evse_cable;
       const t = cfg.tesla;
       const x1 = c.from[0] * width, y1 = c.from[1] * height;
-      // Puerto de carga: tapa trasera izquierda del dibujo (x 40-62, y 16-26 de 478x192).
-      const x2 = (t.x + (TESLA_PORT[0] / 478) * t.w) * width;
-      const y2 = (t.y + (TESLA_PORT[1] / 192) * t.h) * height;
+      // Puerto de carga (trasera izquierda): fracción dentro de la caja del coche.
+      const port = Array.isArray(t.port) ? t.port : [TESLA_PORT[0] / 478, TESLA_PORT[1] / 192];
+      const x2 = (t.x + port[0] * t.w) * width;
+      const y2 = (t.y + port[1] * t.h) * height;
       // Curva suave: sale de la pared del cargador hacia el coche y llega al
       // puerto (trasera izquierda) por detrás del coche.
       const k = Math.max(20, Math.hypot(x2 - x1, y2 - y1) * 0.25);
@@ -177,7 +193,10 @@
       g.appendChild(el("circle", { cx: x2.toFixed(1), cy: y2.toFixed(1), r: "4", class: "evse-plug" }));
       svg.appendChild(g);
     }
-    container.insertBefore(svg, container.firstChild ? container.firstChild.nextSibling : null);
+    // Justo después de la imagen: con clip-path la imagen se pinta como capa
+    // propia y taparía una capa anterior en el árbol.
+    const img = container.querySelector(":scope > img");
+    container.insertBefore(svg, img ? img.nextSibling : container.firstChild);
     return svg;
   }
 
@@ -209,9 +228,70 @@
     return true;
   }
 
+  /** Recorte de bordes blancos en píxeles de la imagen original, o null si
+   *  la planta no tiene recorte o la imagen no es la de referencia. */
+  function cropFor(floor, allFloors, baseW, baseH, cfgData) {
+    const cfg = configFor(floor, allFloors, cfgData);
+    if (!cfg || !cfg.crop || !Array.isArray(cfg.crop.rect) || cfg.crop.rect.length !== 4) return null;
+    const ms = cfg.crop.match_size || cfg.reference_size || [];
+    if (Math.round(baseW) !== ms[0] || Math.round(baseH) !== ms[1]) return null;
+    const [fx0, fy0, fx1, fy1] = cfg.crop.rect.map(Number);
+    if (!(fx1 > fx0 && fy1 > fy0)) return null;
+    return {
+      x: fx0 * baseW,
+      y: fy0 * baseH,
+      w: (fx1 - fx0) * baseW,
+      h: (fy1 - fy0) * baseH,
+      baseW,
+      baseH,
+      relocate: cfg.relocate || {},
+    };
+  }
+
+  /** Posición visible de un elemento con el plano recortado. Si la planta
+   *  define una recolocación para su entidad, se usa; si no, el elemento
+   *  (con su giro) se desplaza lo mínimo para quedar dentro del recorte. */
+  function placeInCrop(item, crop) {
+    const x = Number(item.x) || 0, y = Number(item.y) || 0;
+    const w = Number(item.width) || 0, h = Number(item.height) || 0;
+    if (!crop) return { x, y, moved: false };
+    const rel = crop.relocate && (crop.relocate[item.entity_id] || crop.relocate[item.id]);
+    if (Array.isArray(rel) && rel.length === 2) return { x: Number(rel[0]), y: Number(rel[1]), moved: true };
+    const r = ((Number(item.rotation) || 0) * Math.PI) / 180;
+    const vw = Math.abs(w * Math.cos(r)) + Math.abs(h * Math.sin(r));
+    const vh = Math.abs(w * Math.sin(r)) + Math.abs(h * Math.cos(r));
+    const cx = x + w / 2, cy = y + h / 2;
+    const clamp = (c, size, lo, len) => (size >= len ? lo + len / 2 : Math.min(Math.max(c, lo + size / 2), lo + len - size / 2));
+    const ncx = clamp(cx, vw, crop.x, crop.w);
+    const ncy = clamp(cy, vh, crop.y, crop.h);
+    const moved = Math.abs(ncx - cx) > 0.5 || Math.abs(ncy - cy) > 0.5;
+    return moved ? { x: ncx - w / 2, y: ncy - h / 2, moved } : { x, y, moved: false };
+  }
+
+  /** Punto (px) dentro del recorte, con un margen. */
+  function clampPoint(px, py, crop, inset) {
+    if (!crop) return [px, py];
+    const m = inset || 0;
+    return [
+      Math.min(Math.max(px, crop.x + m), crop.x + crop.w - m),
+      Math.min(Math.max(py, crop.y + m), crop.y + crop.h - m),
+    ];
+  }
+
+  /** clip-path de la imagen para mostrar solo el recorte. */
+  function clipInset(crop) {
+    if (!crop) return "";
+    const r = crop.baseW - crop.x - crop.w, b = crop.baseH - crop.y - crop.h;
+    return `inset(${crop.y.toFixed(2)}px ${r.toFixed(2)}px ${b.toFixed(2)}px ${crop.x.toFixed(2)}px)`;
+  }
+
   window.HADomoticsPlan = {
     load,
     configFor,
+    cropFor,
+    placeInCrop,
+    clampPoint,
+    clipInset,
     evseCharging,
     render,
     update,

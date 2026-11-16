@@ -278,44 +278,45 @@
   </div>
 
   <div id="appSeguridad" class="app-pane" hidden>
-    <header class="sec-top">
-      <div class="brand">HADomotics <span>Seguridad</span></div>
-      <div class="conn" id="secConn" title="Conexión"><span class="dot"></span><span id="secConnText">Desconectado</span></div>
-    </header>
     <div class="sec-layout">
-      <section class="sec-plan-area">
-        <div class="sec-floor-switcher" id="secFloorSwitcher"></div>
-        <div class="sec-canvas-wrapper" id="secCanvasWrapper">
-          <div class="sec-empty" id="secEmpty">Cargando planos…</div>
-          <div class="sec-canvas" id="secCanvas" hidden>
-            <img id="secFloorImage" alt="Plano" />
+      <div class="sec-alarm-bar">
+        <section class="sec-card sec-alarm-card" id="secAlarmCard" aria-label="Panel de Alarma">
+          <div class="sec-alarm-head">
+            <span class="sec-card-title">Panel de Alarma</span>
+            <span class="conn" id="secConn" title="Conexión"><span class="dot"></span><span id="secConnText">Desconectado</span></span>
           </div>
+          <div class="sec-alarm-row">
+            <div class="sec-alarm-info">
+              <div class="sec-alarm-state" id="secAlarmState">—</div>
+              <div class="sec-alarm-meta" id="secAlarmMeta"></div>
+            </div>
+            <div class="sec-modes" id="secModes"></div>
+          </div>
+        </section>
+        <button type="button" class="sec-zones-btn" id="secZonesBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="secZonesPop">
+          <span class="material-icons">grid_view</span><span class="lbl">Zonas</span><span class="badge" id="secZonesBadge"></span>
+        </button>
+      </div>
+      <div class="sec-canvas-wrapper" id="secCanvasWrapper">
+        <div class="sec-empty" id="secEmpty">Cargando planos…</div>
+        <div class="sec-canvas" id="secCanvas" hidden>
+          <img id="secFloorImage" alt="Plano" />
         </div>
-      </section>
-      <aside class="sec-side">
-        <div class="sec-card" id="secAlarmCard">
-          <div class="sec-card-title">Panel de Alarma</div>
-          <div class="sec-alarm-state" id="secAlarmState">—</div>
-          <div class="sec-alarm-meta" id="secAlarmMeta"></div>
-          <div class="sec-modes" id="secModes"></div>
-        </div>
-        <div class="sec-card">
-          <div class="sec-card-title">Zonas activas</div>
-          <div class="sec-zones" id="secZones"></div>
-        </div>
-        <div class="sec-card">
-          <div class="sec-card-title">Sensores abiertos / disparados</div>
-          <ul class="sec-list" id="secOpen"></ul>
-        </div>
-        <div class="sec-card">
-          <div class="sec-card-title">Sirena</div>
-          <ul class="sec-list" id="secSiren"></ul>
-        </div>
-        <div class="sec-card">
-          <div class="sec-card-title">Presencia</div>
-          <ul class="sec-list" id="secPresence"></ul>
-        </div>
-      </aside>
+      </div>
+    </div>
+
+    <div class="sec-dock" id="secDock">
+      <div class="floor-switcher" id="secFloorSwitcher"></div>
+    </div>
+
+    <div class="sec-pop hidden" id="secZonesPop" role="dialog" aria-modal="true" aria-labelledby="secZonesTitle">
+      <div class="sec-pop-card">
+        <header>
+          <div><h3 id="secZonesTitle">Zonas de la alarma</h3><div class="sub" id="secZonesSub"></div></div>
+          <button type="button" class="sec-pop-close" id="secZonesClose" aria-label="Cerrar"><span class="material-icons">close</span></button>
+        </header>
+        <div class="sec-zones" id="secZones"></div>
+      </div>
     </div>
 
     <div class="sheet hidden" id="secConfirm">
@@ -331,6 +332,10 @@
   </div>
 
   <nav class="app-nav" id="appNav">
+    <button type="button" id="navSeguridad" data-app="seguridad">
+      <span class="material-icons">shield</span>
+      Seguridad
+    </button>
     <button type="button" id="navDispositivos" data-app="dispositivos" class="active">
       <span class="material-icons">devices</span>
       Dispositivos
@@ -338,10 +343,6 @@
     <button type="button" id="navEnergia" data-app="energia">
       <span class="material-icons">bolt</span>
       Energía
-    </button>
-    <button type="button" id="navSeguridad" data-app="seguridad">
-      <span class="material-icons">shield</span>
-      Seguridad
     </button>
   </nav>
 

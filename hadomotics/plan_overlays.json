@@ -1,5 +1,5 @@
 {
-  "_doc": "Capa de dibujo fija sobre los planos (no interactiva). Coordenadas en fracción (0-1) del ancho/alto de la imagen del plano, para que no dependan de su resolución. Las plantas se reconocen por nombre normalizado (match) o, si no, por orden.",
+  "_doc": "Capa de dibujo fija sobre los planos (no interactiva). Coordenadas en fracción (0-1) del ancho/alto de la imagen del plano, para que no dependan de su resolución. Las plantas se reconocen por nombre normalizado (match) o, si no, por orden. crop.rect = [x0, y0, x1, y1] recorta los bordes blancos (solo si la imagen tiene el tamaño match_size). relocate = posición visible (px de la imagen original) de elementos que quedan fuera del recorte; no cambia lo guardado.",
   "floors": [
     {
       "key": "planta_baja",
@@ -15,12 +15,50 @@
         1425,
         736
       ],
+      "crop": {
+        "rect": [
+          0.0477,
+          0.1114,
+          0.9747,
+          0.8859
+        ],
+        "match_size": [
+          1425,
+          736
+        ]
+      },
+      "relocate": {
+        "switch.depuradora": [
+          150,
+          100
+        ],
+        "scene.dia": [
+          100,
+          578
+        ],
+        "scene.noche": [
+          200,
+          578
+        ]
+      },
+      "image_hd": {
+        "src": "static/plans/planta_baja_hd.webp",
+        "match_size": [
+          1425,
+          736
+        ]
+      },
       "tesla": {
-        "x": 0.6737,
-        "y": 0.2446,
-        "w": 0.2498,
-        "h": 0.197,
-        "color": "#8f949b"
+        "src": "static/plans/tesla_model_y.webp",
+        "x": 0.6646,
+        "y": 0.2221,
+        "w": 0.2681,
+        "h": 0.2418,
+        "port": [
+          0.0922,
+          0.1835
+        ],
+        "_doc": "Tesla Model Y Juniper 2025 gris visto desde arriba, morro hacia la puerta del garaje (derecha). La caja incluye la sombra; port = puerto de carga (trasera izquierda) en fracción de la caja."
       },
       "evse_cable": {
         "from": [
@@ -45,6 +83,18 @@
         1315,
         652
       ],
+      "crop": {
+        "rect": [
+          0.0745,
+          0.0736,
+          0.9232,
+          0.8988
+        ],
+        "match_size": [
+          1315,
+          652
+        ]
+      },
       "image_hd": {
         "src": "static/plans/planta1_hd.webp",
         "match_size": [

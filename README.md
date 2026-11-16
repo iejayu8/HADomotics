@@ -20,7 +20,12 @@ Updating from 3.3.0 keeps the same slug, so the installed add-on updates in plac
 
 **Seguridad**
 
-Since 3.5.0 a third bottom button, **Seguridad**, shows the Alarmo panel and lets you arm or disarm it. Each mode asks for confirmation, and for the code only when Alarmo requires one; the code is never stored. It also shows the alarm zones, open or triggered sensors and the siren, and draws motion and person detection on the same floor plans as Dispositivos. The entities are listed in `hadomotics/security_map.json`. Drawing overlays shared by both plan views live in `hadomotics/plan_overlays.json`: the garage Tesla, and the charger cable that animates when `sensor.evse_charging_power` is above 100 W.
+Since 3.5.0 the bottom buttons are **Seguridad**, **Dispositivos** and **Energía**, in that order. Seguridad shows the Alarmo panel as a single card centred above the floor plan, where you can arm or disarm the alarm. Each mode asks for confirmation, and asks for the code only when Alarmo requires one; the code is never stored. A small **Zonas** button next to the card shows the alarm zones in an overlay. The floor switcher is the same floating dock as in Dispositivos. Motion and person detection are drawn on the same floor plans as Dispositivos. The entities are listed in `hadomotics/security_map.json`.
+
+Drawing overlays live in `hadomotics/plan_overlays.json`:
+- the white-border crop of each plan, applied only to the reference images and only in view mode;
+- the HD versions of both plans;
+- the garage Tesla and the charger cable, shown only in Dispositivos; the cable animates when `sensor.evse_charging_power` is above 100 W.
 
 **Repository Structure**
 

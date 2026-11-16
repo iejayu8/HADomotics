@@ -98,6 +98,57 @@ test("presence text shows the last change in Madrid time", () => {
   assert.equal(sec.presenceText({ name: "Baño" }, { state: "unavailable" }), "Baño: no disponible");
 });
 
+test("white-border crop only applies to the reference image size", () => {
+  const { plan } = load();
+  const floors = [{ id: "a", name: "PlantaBaja", order: 1 }, { id: "b", name: "Planta1", order: 2 }];
+  const crop = plan.cropFor(floors[0], floors, 1425, 736, OVERLAYS);
+  assert.ok(crop && crop.x > 0 && crop.y > 0 && crop.x + crop.w < 1425 && crop.y + crop.h < 736);
+  // Otra imagen subida por el usuario: sin recorte, coordenadas intactas.
+  assert.equal(plan.cropFor(floors[0], floors, 1600, 900, OVERLAYS), null);
+  const p1 = plan.cropFor(floors[1], floors, 1315, 652, OVERLAYS);
+  assert.ok(p1);
+  assert.match(plan.clipInset(p1), /^inset\(\d+\.\d\dpx \d+\.\d\dpx \d+\.\d\dpx \d+\.\d\dpx\)$/);
+});
+
+test("elements outside the crop are shown at the nearest point inside", () => {
+  const { plan } = load();
+  const floors = [{ id: "a", name: "PlantaBaja", order: 1 }];
+  const crop = plan.cropFor(floors[0], floors, 1425, 736, OVERLAYS);
+  // Dentro: no se mueve.
+  const clima = { x: 559, y: 356, width: 33, height: 31, rotation: 0 };
+  assert.deepEqual({ ...plan.placeInCrop(clima, crop) }, { x: 559, y: 356, moved: false });
+  // Recolocación explícita (Depuradora, en la esquina blanca).
+  const dep = plan.placeInCrop({ entity_id: "switch.depuradora", x: 0, y: 5, width: 74, height: 60 }, crop);
+  assert.equal(dep.moved, true);
+  assert.ok(dep.x >= crop.x && dep.y >= crop.y);
+  // Genérico, con giro de 90°: la caja visible queda dentro del recorte.
+  const door = { entity_id: "cover.x", x: 1182, y: 354, width: 400, height: 30, rotation: 90 };
+  const p = plan.placeInCrop(door, crop);
+  const cx = p.x + door.width / 2;
+  assert.ok(cx + door.height / 2 <= crop.x + crop.w + 0.01);
+  // Sin recorte (modo edición): coordenadas guardadas.
+  assert.deepEqual({ ...plan.placeInCrop(door, null) }, { x: 1182, y: 354, moved: false });
+  assert.deepEqual([...plan.clampPoint(5, 400, crop, 0)], [crop.x, 400]);
+});
+
+test("Seguridad layout: alarm card + Zonas popover, same floor dock, nav order", () => {
+  const html = fs.readFileSync(path.join(STATIC, "index.html"), "utf8");
+  const secSrc = fs.readFileSync(path.join(STATIC, "seguridad", "js", "security.js"), "utf8");
+  const pane = html.slice(html.indexOf('id="appSeguridad"'), html.indexOf('id="appNav"'));
+  assert.match(pane, /id="secAlarmCard"/);
+  assert.match(pane, /id="secZonesBtn"[^>]*aria-haspopup="dialog"/);
+  assert.match(pane, /id="secZonesPop"[^>]*role="dialog"/);
+  assert.match(pane, /class="sec-dock"[\s\S]*id="secFloorSwitcher"/);
+  for (const gone of ["secOpen", "secSiren", "secPresence", "sec-side"]) assert.doesNotMatch(pane, new RegExp(gone));
+  // Coche y cable solo en Dispositivos.
+  assert.doesNotMatch(secSrc, /HADomoticsPlan\.render\(/);
+  assert.match(secSrc, /e\.key === "Escape"/);
+  const navStart = html.indexOf('id="appNav"');
+  const nav = html.slice(navStart, html.indexOf("</nav>", navStart));
+  const order = [...nav.matchAll(/data-app="(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["seguridad", "dispositivos", "energia"]);
+});
+
 test("sources: no stored alarm code, cable is non-interactive and respects reduced motion", () => {
   const secSrc = fs.readFileSync(path.join(STATIC, "seguridad", "js", "security.js"), "utf8");
   const css = fs.readFileSync(path.join(STATIC, "css", "style.css"), "utf8");

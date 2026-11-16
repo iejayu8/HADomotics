@@ -440,6 +440,7 @@ function renderElements(elements) {
   cc.querySelectorAll(".element-overlay").forEach((e) => e.remove());
 
   cc.classList.toggle("view-mode", viewMode);
+  const crop = currentPlanCrop();
 
   elements.forEach((el) => {
     const div = document.createElement("div");
@@ -453,8 +454,12 @@ function renderElements(elements) {
     const rotation = parseFloat(el.rotation) || 0;
     const stateText = _getElementStateText(el);
 
-    div.style.left = `${el.x}px`;
-    div.style.top = `${el.y}px`;
+    // Con el plano recortado (modo vista) los elementos que caen fuera del
+    // dibujo se muestran en el punto más cercano dentro; no se guarda nada.
+    const pos = window.HADomoticsPlan ? window.HADomoticsPlan.placeInCrop(el, crop) : { x: el.x, y: el.y, moved: false };
+    if (pos.moved) div.classList.add("crop-moved");
+    div.style.left = `${pos.x}px`;
+    div.style.top = `${pos.y}px`;
     div.style.width = `${el.width}px`;
     div.style.height = `${el.height}px`;
     div.style.background = _getElementBackground(el);
@@ -515,6 +520,18 @@ function renderElements(elements) {
     cc.appendChild(div);
   });
   renderPlanOverlay();
+}
+
+/** Recorte de bordes blancos del plano actual: solo en modo vista (en
+ *  edición se ve la imagen entera para poder colocar cualquier elemento). */
+const CROP_LABEL_MARGIN = 18;
+function currentPlanCrop() {
+  const img = $("floorImage");
+  if (!viewMode || !img || !currentFloor || !window.HADomoticsPlan) return null;
+  const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
+  const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
+  if (!w || !h) return null;
+  return window.HADomoticsPlan.cropFor(currentFloor, floors, w, h);
 }
 
 /** Capa de dibujo fija del plano (Tesla, cable del cargador). */
@@ -1354,7 +1371,10 @@ function fitFloorPlan() {
   const padR = parseFloat(cs.paddingRight) || 0;
   const padT = parseFloat(cs.paddingTop) || 0;
   const padB = parseFloat(cs.paddingBottom) || 0;
-  const availableWidth = wrapper.clientWidth - padL - padR;
+  // Con el plano recortado al dibujo, un margen lateral deja ver las
+  // etiquetas de los elementos pegados a las paredes exteriores.
+  const cropMargin = currentPlanCrop() ? CROP_LABEL_MARGIN : 0;
+  const availableWidth = wrapper.clientWidth - padL - padR - 2 * cropMargin;
   const availableHeight = wrapper.clientHeight - padT - padB;
 
   if (availableWidth <= 0 || availableHeight <= 0) return;
@@ -1366,15 +1386,21 @@ function fitFloorPlan() {
   img.style.width = `${baseWidth}px`;
   img.style.height = `${baseHeight}px`;
 
+  // Recorte de los bordes blancos (modo vista): se ajusta el dibujo y no la
+  // imagen entera. Los elementos siguen en píxeles de la imagen original.
+  const crop = currentPlanCrop();
+  const view = crop || { x: 0, y: 0, w: baseWidth, h: baseHeight };
+  img.style.clipPath = crop ? window.HADomoticsPlan.clipInset(crop) : "";
+
   // "contain": el plano entero cabe en el área, con su proporción.
-  const scale = Math.min(availableWidth / baseWidth, availableHeight / baseHeight);
+  const scale = Math.min(availableWidth / view.w, availableHeight / view.h);
   floorScale = scale;
   // Las etiquetas de estado mantienen un tamaño legible al reducir el plano.
   container.style.setProperty("--fp-inv", String(Math.min(3, Math.max(1, 1 / scale))));
 
   // Centrado dentro del área útil.
-  const offsetX = Math.max(0, (availableWidth - baseWidth * scale) / 2);
-  const offsetY = Math.max(0, (availableHeight - baseHeight * scale) / 2);
+  const offsetX = cropMargin + Math.max(0, (availableWidth - view.w * scale) / 2) - view.x * scale;
+  const offsetY = Math.max(0, (availableHeight - view.h * scale) / 2) - view.y * scale;
 
   container.style.transformOrigin = "top left";
   container.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;

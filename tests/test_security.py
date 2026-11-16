@@ -52,7 +52,40 @@ def test_overlays_reference_real_evse_power_and_threshold():
     assert security.overlay_entities(ov) == ["sensor.evse_charging_power", "sensor.evse_charging_operational_state"]
     p1 = next(f for f in ov["floors"] if f["key"] == "planta_1")
     assert p1["image_hd"]["match_size"] == [1315, 652]
-    assert os.path.exists(os.path.join(HERE, "..", "hadomotics", p1["image_hd"]["src"]))
+    assert pb["image_hd"]["match_size"] == [1425, 736]
+    for src in (p1["image_hd"]["src"], pb["image_hd"]["src"], pb["tesla"]["src"]):
+        assert os.path.exists(os.path.join(HERE, "..", "hadomotics", src)), src
+    # El coche y el cable solo en planta baja; el puerto, en la trasera izquierda.
+    assert "tesla" not in p1 and "evse_cable" not in p1
+    assert pb["tesla"]["port"][0] < 0.2 and pb["tesla"]["port"][1] < 0.5
+
+
+def test_crop_rects_cover_the_drawing_and_relocations_fit():
+    ov = security.load_overlays()
+    for f in ov["floors"]:
+        crop = f["crop"]
+        x0, y0, x1, y1 = crop["rect"]
+        assert 0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1
+        # Solo se recortan bordes: al menos el 80 % de la imagen sigue visible.
+        assert (x1 - x0) > 0.8 and (y1 - y0) > 0.75
+        # Se aplica solo a la imagen de referencia (la HD conserva ese tamaño base).
+        assert crop["match_size"] == f["reference_size"]
+        w, h = f["reference_size"]
+        for eid, (x, y) in f.get("relocate", {}).items():
+            assert x0 * w <= x <= x1 * w and y0 * h <= y <= y1 * h, eid
+
+
+def test_hd_images_keep_the_exact_aspect_ratio():
+    from PIL import Image
+
+    ov = security.load_overlays()
+    for f in ov["floors"]:
+        with Image.open(os.path.join(HERE, "..", "hadomotics", f["image_hd"]["src"])) as im:
+            w, h = f["image_hd"]["match_size"]
+            assert im.size == (2 * w, 2 * h)
+    with Image.open(os.path.join(HERE, "..", "hadomotics", "static/plans/tesla_model_y.webp")) as car:
+        assert car.mode == "RGBA"
+        assert car.getpixel((0, 0))[3] == 0  # fondo transparente
 
 
 def test_validate_alarm_modes_follow_supported_features():
