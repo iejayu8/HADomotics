@@ -1240,7 +1240,15 @@ app.register_blueprint(_energy_blueprint(
 
 
 from security import ALARM_SERVICES as _ALARM_SERVICES  # noqa: E402
+from security import CONTROL_DOMAIN_SERVICES as _CONTROL_SERVICES  # noqa: E402
 from security import create_blueprint as _security_blueprint  # noqa: E402
+
+
+def _request_is_admin() -> bool:
+    """Same rule as the write gate: an ingress admin, or a valid direct token."""
+    if _is_ingress_peer():
+        return ingress_user_is_admin(_ingress_user_id())
+    return direct_access_enabled() and _ha_token_is_valid(_bearer_token())
 
 
 def _save_security_positions(positions: dict) -> None:
@@ -1250,8 +1258,12 @@ def _save_security_positions(positions: dict) -> None:
 
 
 def _security_invoke(domain: str, service: str, payload: dict):
-    """Arm/disarm the mapped Alarmo panel as this request. The code is never logged."""
-    if domain != "alarm_control_panel" or service not in _ALARM_SERVICES:
+    """Arm/disarm Alarmo, or switch a whitelisted zone/siren entity, as this request.
+    The alarm code is never logged."""
+    allowed = (domain == "alarm_control_panel" and service in _ALARM_SERVICES) or (
+        (domain, service) in _CONTROL_SERVICES
+    )
+    if not allowed:
         log.warning("Blocked security service %s.%s from %s", domain, service, _peer_ip())
         return 403, {"ok": False, "error": "Service is not allowed"}
     token = _token_for_request()
@@ -1281,6 +1293,7 @@ app.register_blueprint(_security_blueprint(
     invoke_service=_security_invoke,
     load_positions=lambda: load_config().get("security_positions", {}),
     save_positions=_save_security_positions,
+    is_admin=_request_is_admin,
 ))
 
 

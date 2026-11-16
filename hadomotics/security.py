@@ -8,6 +8,8 @@ Cliente fino de Home Assistant, mismo patrón que Energía:
                                dentro de HA el panel usa hass.callService como
                                el usuario). El código de Alarmo se reenvía tal
                                cual y nunca se guarda ni se registra.
+- POST /api/security/control   zonas y sirena (solo admin; lista blanca exacta
+                               de entidades y servicios, ver CONTROL_*)
 - GET  /api/plan/overlays      capa de dibujo de los planos (plan_overlays.json)
 """
 
@@ -122,6 +124,74 @@ def validate_alarm(security_map: dict, body: dict, current_state: dict | None):
     return "alarm_control_panel", service, payload
 
 
+# ---------------------------------------------------------------------------
+# Zonas y sirena (lo mismo que el glance «Zonas Activas» y la pestaña «Sirena»
+# del dashboard Lovelace «Seguridad»). Lista blanca exacta, fija en el código:
+# aunque security_map.json cambie, solo se pueden tocar estas entidades.
+# ---------------------------------------------------------------------------
+ZONE_ENTITIES = frozenset(
+    "input_boolean.notificacion_alarma_" + z
+    for z in (
+        "entrada", "lateral_iz", "lateral_de", "piscina",
+        "hab1", "hab2", "hab3", "hab4", "hab5", "hab6", "hab7", "hab8",
+    )
+)
+SIREN_ENABLE_ENTITY = "input_boolean.alarma_sirena"
+SIREN_ENTITY = "siren.heiman_warningdevice_ef_3_0"
+SIREN_TONE_ENTITY = "select.heiman_warningdevice_ef_3_0_tono_de_sirena_predeterminado"
+SIREN_LEVEL_ENTITY = "select.heiman_warningdevice_ef_3_0_nivel_de_sirena_predeterminado"
+
+# entidad -> servicios permitidos (dominio, servicio)
+CONTROL_SERVICES: dict[str, frozenset] = {
+    **{e: frozenset({("input_boolean", "turn_on"), ("input_boolean", "turn_off")}) for e in ZONE_ENTITIES},
+    SIREN_ENABLE_ENTITY: frozenset({("input_boolean", "turn_on"), ("input_boolean", "turn_off")}),
+    SIREN_TONE_ENTITY: frozenset({("select", "select_option")}),
+    SIREN_LEVEL_ENTITY: frozenset({("select", "select_option")}),
+    # Igual que el interruptor de la tarjeta entities de Lovelace: siren.turn_on
+    # / siren.turn_off solo con entity_id (tono y nivel, los predeterminados).
+    SIREN_ENTITY: frozenset({("siren", "turn_on"), ("siren", "turn_off")}),
+}
+CONTROL_DOMAIN_SERVICES = frozenset(ds for v in CONTROL_SERVICES.values() for ds in v)
+
+
+def control_entities(security_map: dict) -> set[str]:
+    """Entidades controlables: las de la lista blanca que además están en el mapa."""
+    mapped = {z.get("entity") for z in security_map.get("zones") or []}
+    siren = security_map.get("siren") or {}
+    mapped.add(siren.get("entity"))
+    mapped |= {x.get("entity") for x in siren.get("extra") or []}
+    return {e for e in mapped if e in CONTROL_SERVICES}
+
+
+def validate_control(security_map: dict, body: dict, current_state: dict | None):
+    """Valida una orden de zona o sirena. Devuelve (domain, service, payload)
+    o lanza ValueError. La prueba de la sirena exige confirm: true."""
+    body = body or {}
+    entity_id = str(body.get("entity_id") or "")
+    if entity_id not in control_entities(security_map):
+        raise ValueError("entidad no permitida")
+    domain = entity_id.split(".", 1)[0]
+    service = str(body.get("service") or "")
+    if "." in service:
+        sdomain, service = service.split(".", 1)
+        if sdomain != domain:
+            raise ValueError("servicio no permitido")
+    if (domain, service) not in CONTROL_SERVICES[entity_id]:
+        raise ValueError(f"servicio {service or '(vacío)'} no permitido para {entity_id}")
+    payload = {"entity_id": entity_id}
+    if domain == "select":
+        option = body.get("option")
+        options = ((current_state or {}).get("attributes") or {}).get("options")
+        if not isinstance(options, list):
+            raise ValueError("opciones no disponibles")
+        if not isinstance(option, str) or option not in options:
+            raise ValueError("opción no permitida")
+        payload["option"] = option
+    if entity_id == SIREN_ENTITY and service == "turn_on" and body.get("confirm") is not True:
+        raise ValueError("la prueba de la sirena requiere confirmación")
+    return domain, service, payload
+
+
 # Posiciones de los marcadores de presencia movidos en modo edición.
 # Se guardan en la configuración del add-on (/data), no en el repositorio:
 #   {"<entity_id>": {"floor": "planta_baja", "x": 0.21, "y": 0.37, "outside": false}}
@@ -194,6 +264,7 @@ def create_blueprint(
     overlays_path: Path = OVERLAYS_FILE,
     load_positions: Callable[[], dict] | None = None,
     save_positions: Callable[[dict], None] | None = None,
+    is_admin: Callable[[], bool] | None = None,
 ) -> Blueprint:
     bp = Blueprint("security", __name__)
 
@@ -214,7 +285,15 @@ def create_blueprint(
 
     @bp.route("/api/security/map", methods=["GET"])
     def security_map():
-        return jsonify(merge_positions(_map(), _positions(), load_overlays(overlays_path)))
+        data = merge_positions(_map(), _positions(), load_overlays(overlays_path))
+        try:
+            admin = bool(is_admin()) if is_admin else False
+        except Exception:  # pragma: no cover - sin respuesta de HA
+            admin = False
+        # Solo decide qué se muestra (la pestaña «Sirena», como en Lovelace);
+        # la autorización real es la del servidor en cada escritura.
+        data["user"] = {"admin": admin}
+        return jsonify(data)
 
     @bp.route("/api/security/positions", methods=["PUT"])
     def security_positions():
@@ -264,5 +343,24 @@ def create_blueprint(
             err = result.get("error") if isinstance(result, dict) else "Could not call Home Assistant service"
             return jsonify({"ok": False, "error": err}), status
         return jsonify({"ok": True, "service": f"{domain}.{service}"})
+
+    @bp.route("/api/security/control", methods=["POST"])
+    def security_control():
+        """Zonas y sirena fuera de Home Assistant. Solo administradores (la
+        puerta de autenticación del add-on), y solo la lista blanca exacta."""
+        body = request.get_json(silent=True) or {}
+        entity = str(body.get("entity_id") or "")
+        try:
+            domain, service, payload = validate_control(
+                _map(), body, get_state(entity) if entity.startswith("select.") else None
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        status, result = invoke_service(domain, service, payload)
+        log.info("security control %s.%s %s -> HTTP %s", domain, service, entity, status)
+        if status != 200:
+            err = result.get("error") if isinstance(result, dict) else "Could not call Home Assistant service"
+            return jsonify({"ok": False, "error": err}), status
+        return jsonify({"ok": True, "service": f"{domain}.{service}", "entity_id": entity})
 
     return bp

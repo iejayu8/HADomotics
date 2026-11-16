@@ -300,6 +300,9 @@
           <button type="button" class="sec-det-btn sec-tool-btn" id="secDetBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="secDetPop">
             <span class="material-icons">sensors</span><span class="lbl">Detecciones</span><span class="badge" id="secDetBadge"></span>
           </button>
+          <button type="button" class="sec-siren-btn sec-tool-btn" id="secSirenBtn" hidden aria-haspopup="dialog" aria-expanded="false" aria-controls="secSirenPop" title="Configuración de la sirena (solo administradores)">
+            <span class="material-icons">campaign</span><span class="lbl">Sirena</span><span class="badge" id="secSirenBadge"></span>
+          </button>
         </div>
       </div>
       <div class="sec-canvas-wrapper" id="secCanvasWrapper">
@@ -324,6 +327,16 @@
           <button type="button" class="sec-pop-close" id="secZonesClose" aria-label="Cerrar"><span class="material-icons">close</span></button>
         </header>
         <div class="sec-zones" id="secZones"></div>
+      </div>
+    </div>
+
+    <div class="sec-pop hidden" id="secSirenPop" role="dialog" aria-modal="false" aria-labelledby="secSirenTitle">
+      <div class="sec-pop-card">
+        <header>
+          <div><h3 id="secSirenTitle">Sirena</h3><div class="sub" id="secSirenSub"></div></div>
+          <button type="button" class="sec-pop-close" id="secSirenClose" aria-label="Cerrar"><span class="material-icons">close</span></button>
+        </header>
+        <div id="secSiren"></div>
       </div>
     </div>
 

@@ -1782,3 +1782,93 @@ def test_backup_restore_keeps_security_positions(client):
     r = client.post("/api/restore", data=json.dumps(backup), content_type="application/json")
     assert r.status_code == 200
     assert srv.load_config()["security_positions"][_POS_ENTITY]["x"] == -0.04
+
+
+# ---------------------------------------------------------------------------
+# 3.5.1 — zonas conmutables y sirena
+# ---------------------------------------------------------------------------
+
+def _control(c, **body):
+    return c.post("/api/security/control", data=json.dumps(body), content_type="application/json")
+
+
+def test_admin_switches_zone_and_siren_config_through_whitelist(client):
+    import server as srv
+    from unittest.mock import patch, MagicMock
+
+    tokens = _Tokens(supervisor="supervisor-secret")
+    tone = "select.heiman_warningdevice_ef_3_0_tono_de_sirena_predeterminado"
+    srv._state_cache[tone] = {"entity_id": tone, "state": "Burglar", "attributes": {"options": ["Burglar", "Fire"]}}
+    try:
+        with patch("server.requests.post", return_value=MagicMock(status_code=200)) as mock_post:
+            r = _control(client, entity_id="input_boolean.notificacion_alarma_piscina", service="turn_off")
+            assert r.status_code == 200
+            args, kwargs = mock_post.call_args
+            assert args[0].endswith("/services/input_boolean/turn_off")
+            assert kwargs["json"] == {"entity_id": "input_boolean.notificacion_alarma_piscina"}
+            r = _control(client, entity_id=tone, service="select_option", option="Fire")
+            assert r.status_code == 200
+            args, kwargs = mock_post.call_args
+            assert args[0].endswith("/services/select/select_option")
+            assert kwargs["json"] == {"entity_id": tone, "option": "Fire"}
+            assert _control(client, entity_id="input_boolean.alarma_sirena", service="turn_on").status_code == 200
+            calls = mock_post.call_count
+            # Fuera de la lista blanca o sin confirmar: nada llega a HA.
+            assert _control(client, entity_id="input_boolean.otra", service="turn_on").status_code == 400
+            assert _control(client, entity_id="lock.puerta", service="unlock").status_code == 400
+            assert _control(client, entity_id=tone, service="select_option", option="Nope").status_code == 400
+            assert _control(client, entity_id="siren.heiman_warningdevice_ef_3_0", service="turn_on").status_code == 400
+            assert mock_post.call_count == calls
+            # Probar sirena con confirmación: siren.turn_on solo con entity_id.
+            r = _control(client, entity_id="siren.heiman_warningdevice_ef_3_0", service="turn_on", confirm=True)
+            assert r.status_code == 200
+            args, kwargs = mock_post.call_args
+            assert args[0].endswith("/services/siren/turn_on")
+            assert kwargs["json"] == {"entity_id": "siren.heiman_warningdevice_ef_3_0"}
+    finally:
+        tokens.close()
+        srv._state_cache.clear()
+
+
+def test_control_failure_is_reported_for_rollback(client):
+    import server as srv
+    from unittest.mock import patch, MagicMock
+
+    tokens = _Tokens(supervisor="supervisor-secret")
+    try:
+        with patch("server.requests.post", return_value=MagicMock(status_code=500)):
+            r = _control(client, entity_id="input_boolean.notificacion_alarma_hab1", service="turn_on")
+    finally:
+        tokens.close()
+    assert r.status_code == 502 and r.get_json()["ok"] is False
+
+
+def test_only_admins_switch_zones_or_siren(ingress_member, lan_client):
+    from unittest.mock import patch
+
+    with patch("server.requests.post") as mock_post:
+        assert _control(ingress_member, entity_id="input_boolean.notificacion_alarma_piscina", service="turn_off").status_code == 403
+        assert _control(ingress_member, entity_id="siren.heiman_warningdevice_ef_3_0", service="turn_on", confirm=True).status_code == 403
+        assert _control(lan_client, entity_id="input_boolean.notificacion_alarma_piscina", service="turn_off").status_code == 401
+    mock_post.assert_not_called()
+
+
+def test_security_map_shows_the_siren_to_admins(client):
+    assert client.get("/api/security/map").get_json()["user"] == {"admin": True}
+
+
+def test_security_map_hides_the_siren_from_members(ingress_member):
+    assert ingress_member.get("/api/security/map").get_json()["user"] == {"admin": False}
+
+
+def test_security_invoke_blocks_services_outside_the_whitelist():
+    import server as srv
+
+    with srv.app.test_request_context("/api/security/control", method="POST"):
+        _assert_invoke_blocked(srv)
+
+
+def _assert_invoke_blocked(srv):
+    assert srv._security_invoke("homeassistant", "restart", {})[0] == 403
+    assert srv._security_invoke("input_boolean", "toggle", {"entity_id": "input_boolean.x"})[0] == 403
+    assert srv._security_invoke("lock", "unlock", {"entity_id": "lock.x"})[0] == 403

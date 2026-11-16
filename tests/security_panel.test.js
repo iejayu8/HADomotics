@@ -145,7 +145,7 @@ test("Seguridad layout: alarm card + Zonas popover, same floor dock, nav order",
   assert.match(pane, /id="secZonesBtn"[^>]*aria-haspopup="dialog"/);
   assert.match(pane, /id="secZonesPop"[^>]*role="dialog"/);
   assert.match(pane, /class="sec-dock"[\s\S]*id="secFloorSwitcher"/);
-  for (const gone of ["secOpen", "secSiren", "secPresence", "sec-side"]) assert.doesNotMatch(pane, new RegExp(gone));
+  for (const gone of ["secOpen", "secPresence", "sec-side"]) assert.doesNotMatch(pane, new RegExp(gone));
   // Coche y cable solo en Dispositivos.
   assert.doesNotMatch(secSrc, /HADomoticsPlan\.render\(/);
   assert.match(secSrc, /e\.key !== "Escape"/);
@@ -271,4 +271,130 @@ test("sources: Seguridad pencil next to the floor chips, admin-only save, free d
   const dragCode = app.slice(app.indexOf("function finishElementDrop"), app.indexOf("function finishElementDrop") + 4000);
   assert.ok(!/Math\.max\(0,/.test(dragCode), "drag must allow positions outside the image");
   assert.match(app, /outside:\s*/);
+});
+
+// ---------------------------------------------------------------------------
+// 3.5.1 — zonas conmutables y sirena
+// ---------------------------------------------------------------------------
+
+function stubEl() {
+  const cls = new Set(["hidden"]);
+  const el = {
+    style: {}, dataset: {}, attrs: {}, textContent: "", value: "", hidden: false, disabled: false, children: [], childElementCount: 0, innerHTML: "",
+    classList: {
+      add: (c) => cls.add(c), remove: (c) => cls.delete(c), contains: (c) => cls.has(c),
+      toggle: (c, on) => { const v = on === undefined ? !cls.has(c) : !!on; if (v) cls.add(c); else cls.delete(c); return v; },
+    },
+    setAttribute(k, v) { el.attrs[k] = String(v); }, getAttribute(k) { return el.attrs[k]; },
+    addEventListener() {}, focus() {}, contains() { return false; },
+    querySelector() { return stubEl(); }, querySelectorAll() { return []; }, getBoundingClientRect() { return { bottom: 0, width: 0, height: 0 }; },
+    appendChild(c) { el.children.push(c); return c; }, remove() {}, replaceChildren() {}, insertBefore(c) { return c; },
+  };
+  return el;
+}
+
+function loadWithDom(fetchImpl) {
+  const els = {};
+  const calls = [];
+  const sandbox = {
+    console, Intl, Date,
+    setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
+    requestAnimationFrame() { return 1; },
+    fetch: async (url, opts) => { calls.push({ url, opts }); return fetchImpl(url, opts); },
+    location: { pathname: "/" },
+    document: {
+      addEventListener() {}, activeElement: null,
+      getElementById(id) { if (!els[id]) els[id] = stubEl(); return els[id]; },
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+      createElement() { return stubEl(); },
+      createElementNS() { return stubEl(); },
+    },
+  };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(STATIC, "js", "plan_overlays.js"), "utf8"), sandbox);
+  vm.runInContext(fs.readFileSync(path.join(STATIC, "seguridad", "js", "security.js"), "utf8"), sandbox);
+  const sec = sandbox.HADomoticsSecurity;
+  const MAP = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "hadomotics", "security_map.json"), "utf8"));
+  MAP.presence = [];
+  MAP.user = { admin: true };
+  sec._setMap(MAP);
+  return { sec, els, calls, MAP };
+}
+
+const PISCINA = "input_boolean.notificacion_alarma_piscina";
+const SIREN = "siren.heiman_warningdevice_ef_3_0";
+
+test("zone switch: immediate state, admin endpoint, rollback when it fails", async () => {
+  let ok = true;
+  const { sec, calls } = loadWithDom(async () => ({ ok, status: ok ? 200 : 403, json: async () => (ok ? { ok: true } : { error: "Administrator access required" }) }));
+  sec._setStates({ [PISCINA]: { entity_id: PISCINA, state: "on" } });
+  const p = sec.toggleZone(PISCINA);
+  assert.equal(sec.shownState(PISCINA), "off"); // al momento
+  assert.equal(await p, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "/api/security/control");
+  assert.deepEqual(JSON.parse(calls[0].opts.body), { entity_id: PISCINA, service: "turn_off" });
+  // Falla (p. ej. 403 de un no administrador): vuelve al estado real.
+  ok = false;
+  sec._setStates({ [PISCINA]: { entity_id: PISCINA, state: "on" } });
+  delete sec.pending[PISCINA];
+  const q = sec.toggleZone(PISCINA);
+  assert.equal(sec.shownState(PISCINA), "off");
+  assert.equal(await q, false);
+  assert.equal(sec.shownState(PISCINA), "on");
+  assert.equal(sec.pending[PISCINA], undefined);
+});
+
+test("Probar sirena asks «Sonará la sirena real» and never fires without confirmation", async () => {
+  const { sec, els, calls } = loadWithDom(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }));
+  sec._setStates({ [SIREN]: { entity_id: SIREN, state: "off" } });
+  assert.equal(sec.SIREN_TEST_TEXT, "Sonará la sirena real. ¿Probar la sirena?");
+  // Cancelar: ninguna llamada.
+  let p = sec.testSiren();
+  assert.equal(els.secConfirmText.textContent, sec.SIREN_TEST_TEXT);
+  assert.equal(els.secConfirm.classList.contains("hidden"), false);
+  assert.equal(calls.length, 0);
+  els.secConfirmNo.onclick();
+  assert.equal(await p, false);
+  assert.equal(calls.length, 0);
+  // Confirmar: siren.turn_on con confirm: true (igual que el interruptor de Lovelace).
+  p = sec.testSiren();
+  els.secConfirmYes.onclick();
+  assert.equal(await p, true);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(JSON.parse(calls[0].opts.body), { entity_id: SIREN, service: "turn_on", confirm: true });
+  // Sonando: el mismo botón la para sin confirmación.
+  sec._setStates({ [SIREN]: { entity_id: SIREN, state: "on" } });
+  delete sec.pending[SIREN];
+  assert.equal(await sec.testSiren(), true);
+  assert.deepEqual(JSON.parse(calls[1].opts.body), { entity_id: SIREN, service: "turn_off" });
+});
+
+test("inside Home Assistant zones and siren use hass.callService as the user", async () => {
+  const { sec, calls } = loadWithDom(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+  // Sin HA embebido en este sandbox: comprobamos el código fuente.
+  const js = fs.readFileSync(path.join(STATIC, "seguridad", "js", "security.js"), "utf8");
+  assert.match(js, /await hass\.callService\(domain, service, data\)/);
+  assert.equal(calls.length, 0);
+  // La sirena solo se ofrece a administradores.
+  assert.equal(sec.isAdmin(), true);
+  assert.match(js, /hass\.user\.is_admin === true/);
+  assert.match(js, /MAP\.user && MAP\.user\.admin/);
+});
+
+test("sources: Sirena button next to Zonas/Detecciones, hidden by default, one popover at a time", () => {
+  const html = fs.readFileSync(path.join(STATIC, "index.html"), "utf8");
+  const tools = html.slice(html.indexOf('class="sec-tools"'), html.indexOf('id="secCanvasWrapper"'));
+  assert.ok(tools.indexOf('id="secZonesBtn"') < tools.indexOf('id="secDetBtn"'));
+  assert.ok(tools.indexOf('id="secDetBtn"') < tools.indexOf('id="secSirenBtn"'));
+  assert.match(tools, /id="secSirenBtn" hidden/);
+  assert.match(tools, /class="sec-siren-btn sec-tool-btn"/);
+  const js = fs.readFileSync(path.join(STATIC, "seguridad", "js", "security.js"), "utf8");
+  assert.match(js, /sirena: \{ pop: "secSirenPop", btn: "secSirenBtn"/);
+  // Solo testSiren llama a siren.turn_on, y siempre después de confirmDlg.
+  const ons = js.match(/applyControl\(e\.siren, "turn_on"/g) || [];
+  assert.equal(ons.length, 1);
+  assert.ok(js.indexOf("confirmDlg(SIREN_TEST_TEXT") < js.indexOf('applyControl(e.siren, "turn_on"'));
 });

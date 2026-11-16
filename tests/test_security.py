@@ -176,3 +176,64 @@ def test_validate_position_rules():
     for body in bad:
         with pytest.raises(ValueError):
             security.validate_position(smap, ov, body)
+
+
+# ---------------------------------------------------------------------------
+# 3.5.1 — zonas conmutables y sirena (lista blanca exacta)
+# ---------------------------------------------------------------------------
+
+ZONES12 = {
+    "input_boolean.notificacion_alarma_" + z
+    for z in ("entrada", "lateral_iz", "lateral_de", "piscina", "hab1", "hab2", "hab3", "hab4", "hab5", "hab6", "hab7", "hab8")
+}
+TONE = "select.heiman_warningdevice_ef_3_0_tono_de_sirena_predeterminado"
+LEVEL = "select.heiman_warningdevice_ef_3_0_nivel_de_sirena_predeterminado"
+SIREN = "siren.heiman_warningdevice_ef_3_0"
+
+
+def test_control_whitelist_is_exactly_the_dashboard_entities():
+    smap, _ = _map_and_overlays()
+    assert set(security.ZONE_ENTITIES) == ZONES12
+    assert {z["entity"] for z in smap["zones"]} == ZONES12
+    assert security.control_entities(smap) == ZONES12 | {"input_boolean.alarma_sirena", TONE, LEVEL, SIREN}
+    assert security.CONTROL_DOMAIN_SERVICES == {
+        ("input_boolean", "turn_on"), ("input_boolean", "turn_off"),
+        ("select", "select_option"), ("siren", "turn_on"), ("siren", "turn_off"),
+    }
+    # Una entidad añadida al mapa pero fuera de la lista blanca no se puede tocar.
+    smap2 = json.loads(json.dumps(smap))
+    smap2["zones"].append({"entity": "input_boolean.otra", "name": "Otra"})
+    assert "input_boolean.otra" not in security.control_entities(smap2)
+
+
+def test_validate_control_zones_and_siren():
+    smap, _ = _map_and_overlays()
+    z = "input_boolean.notificacion_alarma_piscina"
+    assert security.validate_control(smap, {"entity_id": z, "service": "turn_off"}, None) == (
+        "input_boolean", "turn_off", {"entity_id": z})
+    assert security.validate_control(smap, {"entity_id": z, "service": "input_boolean.turn_on"}, None)[1] == "turn_on"
+    assert security.validate_control(smap, {"entity_id": "input_boolean.alarma_sirena", "service": "turn_off"}, None)[0] == "input_boolean"
+    tone_state = {"attributes": {"options": ["Stop", "Burglar", "Fire"]}}
+    assert security.validate_control(smap, {"entity_id": TONE, "service": "select_option", "option": "Fire"}, tone_state) == (
+        "select", "select_option", {"entity_id": TONE, "option": "Fire"})
+    # Probar sirena: solo con confirmación explícita, y solo entity_id (como Lovelace).
+    assert security.validate_control(smap, {"entity_id": SIREN, "service": "turn_on", "confirm": True}, None) == (
+        "siren", "turn_on", {"entity_id": SIREN})
+    assert security.validate_control(smap, {"entity_id": SIREN, "service": "turn_off"}, None)[1] == "turn_off"
+    bad = [
+        ({"entity_id": "input_boolean.otra", "service": "turn_on"}, None),
+        ({"entity_id": "alarm_control_panel.alarmo", "service": "alarm_disarm"}, None),
+        ({"entity_id": "switch.depuradora", "service": "turn_on"}, None),
+        ({"entity_id": z, "service": "toggle"}, None),
+        ({"entity_id": z, "service": "homeassistant.turn_on"}, None),
+        ({"entity_id": z, "service": "select_option"}, None),
+        ({"entity_id": TONE, "service": "select_option", "option": "Siren9"}, tone_state),
+        ({"entity_id": TONE, "service": "select_option", "option": "Fire"}, None),
+        ({"entity_id": LEVEL, "service": "turn_on"}, None),
+        ({"entity_id": SIREN, "service": "turn_on"}, None),
+        ({"entity_id": SIREN, "service": "turn_on", "confirm": "true"}, None),
+        ({"entity_id": "select.heiman_warningdevice_ef_3_0_luz_estroboscopica_predeterminada", "service": "select_option", "option": "Strobe"}, None),
+    ]
+    for body, st in bad:
+        with pytest.raises(ValueError):
+            security.validate_control(smap, body, st)

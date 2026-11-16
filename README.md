@@ -10,7 +10,7 @@ The panel is part of Home Assistant (ingress). Host port **8099 is not published
 - **Lovelace card:** set `addon_url` to `/api/hassio_ingress/<token>` (copy the path from the sidebar panel). Administrators can leave it empty and the card will look the path up. Actions on the card go through Home Assistant (`hass.callService`), not the add-on proxy.
 - **Direct access (off by default):** in the add-on configuration enable **Allow direct access**, then on the Network page set a host port. Call the API with `Authorization: Bearer <long-lived access token>`. The token is checked with Home Assistant, and service calls run as that user. For a browser on another origin, set **CORS origins** to the exact origin (a wildcard is ignored).
 
-Service calls through the add-on are limited to floor-plan controls (toggle, cover position, lights, scenes, scripts, and the other device services listed in `hadomotics/server.py`) plus the Energía helpers `input_number.set_value` and `input_select.select_option`. The Seguridad sub-app has its own admin-only endpoint, `POST /api/security/alarm`, which accepts only `alarm_control_panel.alarmo` and the arm/disarm modes Alarmo advertises. `homeassistant.restart`, shell commands, and similar administrative services are rejected.
+Service calls through the add-on are limited to floor-plan controls (toggle, cover position, lights, scenes, scripts, and the other device services listed in `hadomotics/server.py`) plus the Energía helpers `input_number.set_value` and `input_select.select_option`. The Seguridad sub-app has its own admin-only endpoints. `POST /api/security/alarm` accepts only `alarm_control_panel.alarmo` and the arm/disarm modes Alarmo advertises. `POST /api/security/control` accepts only the alarm zones and siren entities listed below. `homeassistant.restart`, shell commands, and similar administrative services are rejected.
 
 **Dispositivos and Energía**
 
@@ -29,6 +29,21 @@ Close either with X, Esc, a click outside, or its button. The floor switcher is 
 Motion sensors and cameras are drawn on the same floor plans as Dispositivos, labelled with their name only. The icon colour shows the state: red for detection, green for no detection, dim grey for unavailable. The full state is in the marker's `aria-label` and `title`. The entities are listed in `hadomotics/security_map.json`.
 
 Since 3.5.1 the Seguridad dock has a pencil button next to the floor switcher, in the same place as the Edit button in Dispositivos. In edit mode you can drag motion sensors and cameras with a mouse or a finger. Each position is saved when you drop it; press ✓ to leave edit mode. Positions are stored in the add-on configuration under `security_positions` as fractions of the plan image, through the admin-only `PUT /api/security/positions`. Until you move a marker, the positions in `security_map.json` are used.
+
+**Zones and siren**
+
+Since 3.5.1 each row in **Zonas** is a switch for its `input_boolean.notificacion_alarma_*`, like the Lovelace «Zonas Activas» card. The change shows at once and is undone, with a message, if it fails.
+
+A **Sirena** button next to Zonas and Detecciones opens one overlay with:
+- the «Sirena con la alarma» switch (`input_boolean.alarma_sirena`);
+- the Heiman default tone and level selects (`select.heiman_warningdevice_ef_3_0_tono_de_sirena_predeterminado`, `select.heiman_warningdevice_ef_3_0_nivel_de_sirena_predeterminado`);
+- **Probar sirena**, which does what the Lovelace siren toggle does: `siren.turn_on` on `siren.heiman_warningdevice_ef_3_0` with only the `entity_id`. It always asks for confirmation first («Sonará la sirena real»). While the siren sounds, the button becomes «Parar sirena» (`siren.turn_off`).
+
+The Lovelace Sirena view is visible to two users only, so the Sirena button is shown to administrators only.
+
+How the calls are made:
+- Inside Home Assistant, zones and siren use `hass.callService` as the signed-in user.
+- Outside, they go to `POST /api/security/control`. It is admin-only and has a fixed whitelist: the 12 zones and `input_boolean.alarma_sirena` with `turn_on`/`turn_off`, the two selects with `select_option` (only an option the entity lists), and the siren with `turn_on` (only with `"confirm": true`) and `turn_off`. Anything else is rejected before it reaches Home Assistant.
 
 **Elements outside the floor plan**
 
