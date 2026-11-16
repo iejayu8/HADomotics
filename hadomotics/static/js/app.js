@@ -458,6 +458,7 @@ function renderElements(elements) {
     // dibujo se muestran en el punto más cercano dentro; no se guarda nada.
     const pos = window.HADomoticsPlan ? window.HADomoticsPlan.placeInCrop(el, crop) : { x: el.x, y: el.y, moved: false };
     if (pos.moved) div.classList.add("crop-moved");
+    if (el.outside === true) div.classList.add("outside-plan");
     div.style.left = `${pos.x}px`;
     div.style.top = `${pos.y}px`;
     div.style.width = `${el.width}px`;
@@ -486,8 +487,9 @@ function renderElements(elements) {
           elemId: el.id,
           startX: e.clientX,
           startY: e.clientY,
-          origX: el.x,
-          origY: el.y,
+          origX: pos.x,
+          origY: pos.y,
+          moved: false,
         };
         openElementProps(el);
       });
@@ -519,15 +521,42 @@ function renderElements(elements) {
 
     cc.appendChild(div);
   });
+  renderDrawingOutline(crop);
   renderPlanOverlay();
+  if (viewMode) keepOutsideElementsVisible();
 }
 
-/** Recorte de bordes blancos del plano actual: solo en modo vista (en
- *  edición se ve la imagen entera para poder colocar cualquier elemento). */
+/** En edición, contorno discontinuo del dibujo: lo de fuera es el fondo. */
+function renderDrawingOutline(crop) {
+  const cc = $("canvasContainer");
+  const img = $("floorImage");
+  if (!cc) return;
+  cc.querySelectorAll(":scope > .plan-drawing-outline").forEach((e) => e.remove());
+  if (viewMode || !img) return;
+  const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
+  const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
+  const d = crop || { x: 0, y: 0, w, h };
+  const o = document.createElement("div");
+  o.className = "plan-drawing-outline";
+  o.style.left = `${d.x}px`;
+  o.style.top = `${d.y}px`;
+  o.style.width = `${d.w}px`;
+  o.style.height = `${d.h}px`;
+  o.title = "Dibujo del plano: fuera de esta línea, el elemento queda en el fondo";
+  cc.appendChild(o);
+}
+
+/** Recorte de bordes blancos del plano actual (vista y edición: en edición
+ *  se ve lo mismo que en vista, y alrededor queda fondo libre). */
 const CROP_LABEL_MARGIN = 18;
+// En edición, margen libre alrededor del dibujo (fracción) para soltar
+// elementos en el fondo, fuera del plano.
+const EDIT_OUTSIDE_MARGIN = 0.12;
+let floorVisibleRect = null;
+let floorDrawingRect = null;
 function currentPlanCrop() {
   const img = $("floorImage");
-  if (!viewMode || !img || !currentFloor || !window.HADomoticsPlan) return null;
+  if (!img || !currentFloor || !window.HADomoticsPlan) return null;
   const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
   const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
   if (!w || !h) return null;
@@ -988,8 +1017,10 @@ document.addEventListener("mousemove", async (e) => {
   if (dragState) {
     const dx = (e.clientX - dragState.startX) / floorScale;
     const dy = (e.clientY - dragState.startY) / floorScale;
-    const newX = Math.max(0, dragState.origX + dx);
-    const newY = Math.max(0, dragState.origY + dy);
+    // Sin límite: se puede arrastrar fuera del dibujo, al fondo.
+    const newX = dragState.origX + dx;
+    const newY = dragState.origY + dy;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragState.moved = true;
     const el = currentFloor.elements.find((x) => x.id === dragState.elemId);
     if (el) {
       el.x = newX;
@@ -1028,14 +1059,17 @@ document.addEventListener("mousemove", async (e) => {
 
 document.addEventListener("mouseup", async () => {
   if (dragState) {
-    const el = currentFloor.elements.find((x) => x.id === dragState.elemId);
-    if (el) {
+    const st = dragState;
+    dragState = null;
+    const el = currentFloor.elements.find((x) => x.id === st.elemId);
+    // Un clic sin arrastrar (para abrir propiedades) no cambia nada guardado.
+    if (el && st.moved) {
+      const placed = finishElementDrop(el);
       await apiFetch(`/api/floors/${currentFloor.id}/elements/${el.id}`, {
         method: "PUT",
-        body: JSON.stringify({ x: el.x, y: el.y }),
+        body: JSON.stringify({ x: placed.x, y: placed.y, outside: placed.outside }),
       }).catch(() => {});
     }
-    dragState = null;
   }
   if (resizeState) {
     const el = currentFloor.elements.find((x) => x.id === resizeState.elemId);
@@ -1048,6 +1082,40 @@ document.addEventListener("mouseup", async () => {
     resizeState = null;
   }
 });
+
+/** Al soltar: queda dentro de la zona visible y se marca si está fuera del
+ *  dibujo (fondo). Un elemento marcado «fuera» nunca se recoloca dentro. */
+function finishElementDrop(el) {
+  const HP = window.HADomoticsPlan;
+  let x = Number(el.x) || 0, y = Number(el.y) || 0;
+  let outside = false;
+  if (HP && HP.visualBox) {
+    const box = HP.visualBox(el, x, y);
+    if (floorVisibleRect) {
+      const c = HP.clampBox(box, floorVisibleRect);
+      x += c.x - box.x;
+      y += c.y - box.y;
+    }
+    outside = HP.isOutside(HP.visualBox(el, x, y), floorDrawingRect);
+  }
+  x = Math.round(x * 10) / 10;
+  y = Math.round(y * 10) / 10;
+  el.x = x;
+  el.y = y;
+  el.outside = outside;
+  const overlay = $("canvasContainer").querySelector(`[data-id="${el.id}"]`);
+  if (overlay) {
+    overlay.style.left = `${x}px`;
+    overlay.style.top = `${y}px`;
+    overlay.classList.toggle("outside-plan", outside);
+  }
+  if (currentElement && currentElement.id === el.id) {
+    currentElement.x = x;
+    currentElement.y = y;
+    currentElement.outside = outside;
+  }
+  return { x, y, outside };
+}
 
 // ---------------------------------------------------------------------------
 // Load floors
@@ -1386,24 +1454,75 @@ function fitFloorPlan() {
   img.style.width = `${baseWidth}px`;
   img.style.height = `${baseHeight}px`;
 
-  // Recorte de los bordes blancos (modo vista): se ajusta el dibujo y no la
-  // imagen entera. Los elementos siguen en píxeles de la imagen original.
+  // Recorte de los bordes blancos: se ajusta el dibujo y no la imagen
+  // entera. Los elementos siguen en píxeles de la imagen original.
   const crop = currentPlanCrop();
-  const view = crop || { x: 0, y: 0, w: baseWidth, h: baseHeight };
+  const drawing = crop || { x: 0, y: 0, w: baseWidth, h: baseHeight };
   img.style.clipPath = crop ? window.HADomoticsPlan.clipInset(crop) : "";
 
-  // "contain": el plano entero cabe en el área, con su proporción.
-  const scale = Math.min(availableWidth / view.w, availableHeight / view.h);
+  // "contain" del dibujo. Los elementos colocados fuera del dibujo también
+  // entran en el ajuste (sin encoger el dibujo más de un 15 %). En edición se
+  // deja además un margen alrededor para poder soltar elementos en el fondo.
+  const HP = window.HADomoticsPlan;
+  const extras = outsideElementBoxes();
+  if (!viewMode) {
+    const m = EDIT_OUTSIDE_MARGIN;
+    extras.push({ x: drawing.x - drawing.w * m, y: drawing.y - drawing.h * m, w: drawing.w * (1 + 2 * m), h: drawing.h * (1 + 2 * m) });
+  }
+  const fit = HP && HP.computeFit
+    ? HP.computeFit({ aw: availableWidth, ah: availableHeight, drawing, extras, minRatio: viewMode ? 0.85 : 0, padPx: viewMode ? 12 : 0 })
+    : (() => {
+      const sc = Math.min(availableWidth / drawing.w, availableHeight / drawing.h);
+      return { scale: sc, ox: (availableWidth - drawing.w * sc) / 2 - drawing.x * sc, oy: (availableHeight - drawing.h * sc) / 2 - drawing.y * sc };
+    })();
+  const scale = fit.scale;
   floorScale = scale;
   // Las etiquetas de estado mantienen un tamaño legible al reducir el plano.
   container.style.setProperty("--fp-inv", String(Math.min(3, Math.max(1, 1 / scale))));
 
-  // Centrado dentro del área útil.
-  const offsetX = cropMargin + Math.max(0, (availableWidth - view.w * scale) / 2) - view.x * scale;
-  const offsetY = Math.max(0, (availableHeight - view.h * scale) / 2) - view.y * scale;
+  const offsetX = cropMargin + fit.ox;
+  const offsetY = fit.oy;
 
   container.style.transformOrigin = "top left";
   container.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+
+  // Zona visible del contenedor en coordenadas del plano (sin el dock).
+  const inset = 6;
+  floorVisibleRect = {
+    x: (-padL + inset - offsetX) / scale,
+    y: (-padT + inset - offsetY) / scale,
+    w: (wrapper.clientWidth - 2 * inset) / scale,
+    h: (padT + availableHeight - 2 * inset) / scale,
+  };
+  floorDrawingRect = drawing;
+  if (viewMode) keepOutsideElementsVisible();
+}
+
+/** Cajas de los elementos colocados fuera del dibujo (en px de la imagen). */
+function outsideElementBoxes() {
+  const HP = window.HADomoticsPlan;
+  if (!currentFloor || !HP || !HP.visualBox) return [];
+  return (currentFloor.elements || [])
+    .filter((el) => el.outside === true)
+    .map((el) => HP.visualBox(el, Number(el.x) || 0, Number(el.y) || 0));
+}
+
+/** En modo vista, un elemento fuera del dibujo se mantiene en su zona pero
+ *  siempre dentro de la parte visible de la pantalla. */
+function keepOutsideElementsVisible() {
+  const HP = window.HADomoticsPlan;
+  const cc = $("canvasContainer");
+  if (!currentFloor || !HP || !cc || !floorVisibleRect) return;
+  (currentFloor.elements || []).forEach((el) => {
+    if (el.outside !== true) return;
+    const overlay = cc.querySelector(`[data-id="${el.id}"]`);
+    if (!overlay) return;
+    const x = Number(el.x) || 0, y = Number(el.y) || 0;
+    const box = HP.visualBox(el, x, y);
+    const c = HP.clampBox(box, floorVisibleRect);
+    overlay.style.left = `${x + (c.x - box.x)}px`;
+    overlay.style.top = `${y + (c.y - box.y)}px`;
+  });
 }
 
 let fitFloorPlanFrame = 0;

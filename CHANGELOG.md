@@ -1,5 +1,39 @@
 # Changelog
 
+## 3.5.1
+
+### Added
+- **Mover elementos en Seguridad.** En el dock flotante de Seguridad hay un botón lápiz junto al selector de planta, en el mismo sitio y con el mismo estilo que en Dispositivos. Al pulsarlo entras en modo edición:
+  - Los sensores de movimiento y las cámaras se pueden arrastrar en cada planta, con ratón o con el dedo.
+  - Cada posición se guarda al soltar. Para salir, pulsa ✓.
+  - Las posiciones se guardan en la configuración del add-on (`security_positions`, en fracciones de la imagen) mediante `PUT /api/security/positions`, que es solo para administradores. A un usuario que no es administrador se le avisa y el marcador vuelve a su sitio.
+  - Las posiciones de siempre (`security_map.json`) son el valor por defecto mientras no muevas nada.
+- **Elementos fuera del plano, en Dispositivos y en Seguridad.** En modo edición puedes soltar un elemento en el fondo, fuera del dibujo; por ejemplo, los botones de escena Día y Noche.
+  - En modo edición, una línea discontinua marca el borde del dibujo y alrededor queda un margen de fondo donde soltar.
+  - El elemento se queda fuera, en la zona aproximada donde lo colocaste, con cualquier tamaño de pantalla. Si no cabe, el plano se reduce como mucho al 85 %; en pantallas pequeñas, el elemento se acerca lo justo para no salirse de la pantalla.
+  - El recorte de bordes blancos y la recolocación de 3.5.0 ya no devuelven al plano los elementos que has colocado tú. Solo se aplican a los elementos antiguos, que no tienen el campo `outside`.
+
+- **Zonas que se pueden activar y desactivar.** En Seguridad, cada fila del desplegable «Zonas» es un interruptor de su `input_boolean.notificacion_alarma_*`, igual que la tarjeta «Zonas Activas» de Lovelace.
+  - El cambio se ve al momento. Si Home Assistant o el add-on lo rechazan, el interruptor vuelve a su estado y aparece un aviso.
+  - Dentro de Home Assistant se llama a `input_boolean.turn_on` / `turn_off` como tu usuario (`hass.callService`), como con la alarma.
+  - Fuera de Home Assistant se usa `POST /api/security/control`, solo para administradores. Acepta únicamente las 12 zonas del panel.
+- **Botón «Sirena»**, discreto, junto a «Zonas» y «Detecciones», con el mismo estilo. Solo se abre uno de los tres a la vez. El desplegable tiene:
+  - el interruptor «Sirena con la alarma» (`input_boolean.alarma_sirena`);
+  - el tono y el nivel predeterminados de la Heiman: `select.heiman_warningdevice_ef_3_0_tono_de_sirena_predeterminado` y `select.heiman_warningdevice_ef_3_0_nivel_de_sirena_predeterminado`, con las opciones de cada entidad;
+  - «Probar sirena», que hace lo mismo que el interruptor de la sirena en Lovelace: `siren.turn_on` sobre `siren.heiman_warningdevice_ef_3_0`, solo con `entity_id`, es decir, con el tono y el nivel predeterminados. Antes pide confirmación («Sonará la sirena real») y nunca suena sola. Mientras suena, el mismo botón pasa a «Parar sirena» (`siren.turn_off`).
+  - En Lovelace, la pestaña «Sirena» solo la ven dos usuarios. Aquí el botón solo se muestra a administradores: dentro de HA, `hass.user.is_admin`; fuera, `user.admin` de `GET /api/security/map`. Además, el add-on solo acepta estas órdenes de administradores.
+- **Lista blanca exacta en el servidor**, fija en el código:
+  - las 12 zonas y `input_boolean.alarma_sirena`, con `input_boolean.turn_on` y `turn_off`;
+  - los dos `select`, con `select.select_option`, y solo con una opción que la entidad anuncie;
+  - la sirena, con `siren.turn_on` (solo con `"confirm": true`) y `siren.turn_off`.
+  Cualquier otra entidad o servicio devuelve 400 y no llega a Home Assistant. Un usuario de ingress que no es administrador recibe 403, y una petición desde la red local, 401.
+
+### Changed
+- En Dispositivos, el modo edición muestra el plano recortado igual que el modo vista, para que lo que colocas sea lo que ves.
+- Cada elemento de Dispositivos guarda un campo nuevo, `outside` (`true` o `false`), al soltarlo tras moverlo. Las coordenadas siguen en píxeles de la imagen y pueden ser negativas o pasar del borde. Pulsar un elemento sin moverlo no cambia nada de lo guardado.
+- La copia de seguridad y la restauración incluyen `security_positions`.
+- Las configuraciones guardadas siguen funcionando igual.
+
 ## 3.5.0
 
 ### Added

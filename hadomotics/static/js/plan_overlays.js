@@ -255,6 +255,8 @@
     const x = Number(item.x) || 0, y = Number(item.y) || 0;
     const w = Number(item.width) || 0, h = Number(item.height) || 0;
     if (!crop) return { x, y, moved: false };
+    // Colocado a propósito (dentro o fuera del dibujo): se respeta tal cual.
+    if (item.outside === true || item.outside === false) return { x, y, moved: false };
     const rel = crop.relocate && (crop.relocate[item.entity_id] || crop.relocate[item.id]);
     if (Array.isArray(rel) && rel.length === 2) return { x: Number(rel[0]), y: Number(rel[1]), moved: true };
     const r = ((Number(item.rotation) || 0) * Math.PI) / 180;
@@ -266,6 +268,65 @@
     const ncy = clamp(cy, vh, crop.y, crop.h);
     const moved = Math.abs(ncx - cx) > 0.5 || Math.abs(ncy - cy) > 0.5;
     return moved ? { x: ncx - w / 2, y: ncy - h / 2, moved } : { x, y, moved: false };
+  }
+
+  /** Caja visible (girada) de un elemento colocado en x, y. */
+  function visualBox(item, x, y) {
+    const w = Number(item.width) || 0, h = Number(item.height) || 0;
+    const r = ((Number(item.rotation) || 0) * Math.PI) / 180;
+    const vw = Math.abs(w * Math.cos(r)) + Math.abs(h * Math.sin(r));
+    const vh = Math.abs(w * Math.sin(r)) + Math.abs(h * Math.cos(r));
+    const cx = x + w / 2, cy = y + h / 2;
+    return { x: cx - vw / 2, y: cy - vh / 2, w: vw, h: vh };
+  }
+
+  /** ¿El centro de la caja cae fuera del dibujo? (decide «fuera del plano»). */
+  function isOutside(box, drawing) {
+    if (!box || !drawing) return false;
+    const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+    return cx < drawing.x || cy < drawing.y || cx > drawing.x + drawing.w || cy > drawing.y + drawing.h;
+  }
+
+  /** Desplaza lo mínimo una caja (x, y, w, h) para que quede dentro de rect. */
+  function clampBox(box, rect) {
+    const fit = (v, size, lo, len) => (size >= len ? lo + (len - size) / 2 : Math.min(Math.max(v, lo), lo + len - size));
+    return { x: fit(box.x, box.w, rect.x, rect.w), y: fit(box.y, box.h, rect.y, rect.h), w: box.w, h: box.h };
+  }
+
+  function union(a, b) {
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+    return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+  }
+
+  /** Ajuste del plano al área disponible (aw × ah, px de pantalla).
+   *  - drawing: dibujo (recorte) en px de la imagen.
+   *  - extras: cajas de elementos colocados fuera del dibujo; se intenta que
+   *    también quepan, sin reducir el dibujo por debajo de minRatio.
+   *  Devuelve { scale, ox, oy } con pantalla = o + coordenada × scale. */
+  function computeFit(o) {
+    const D = o.drawing;
+    const sD = Math.min(o.aw / D.w, o.ah / D.h);
+    let U = D;
+    (o.extras || []).forEach((r) => { if (r && r.w >= 0 && r.h >= 0) U = union(U, r); });
+    const pad = (o.padPx || 0) / sD;
+    if (U !== D) {
+      U = {
+        x: U.x < D.x ? U.x - pad : U.x,
+        y: U.y < D.y ? U.y - pad : U.y,
+        w: U.w, h: U.h,
+      };
+      const right = Math.max(U.x + U.w + (U.x + U.w > D.x + D.w ? pad : 0), D.x + D.w);
+      const bottom = Math.max(U.y + U.h + (U.y + U.h > D.y + D.h ? pad : 0), D.y + D.h);
+      U = { x: U.x, y: U.y, w: right - U.x, h: bottom - U.y };
+    }
+    const sU = Math.min(o.aw / U.w, o.ah / U.h);
+    const minRatio = typeof o.minRatio === "number" ? o.minRatio : 0.85;
+    const scale = Math.max(sU, Math.min(sD, minRatio * sD));
+    const fitsX = U.w * scale <= o.aw + 0.5;
+    const fitsY = U.h * scale <= o.ah + 0.5;
+    const ox = fitsX ? (o.aw - U.w * scale) / 2 - U.x * scale : (o.aw - D.w * scale) / 2 - D.x * scale;
+    const oy = fitsY ? (o.ah - U.h * scale) / 2 - U.y * scale : (o.ah - D.h * scale) / 2 - D.y * scale;
+    return { scale, ox, oy, union: U };
   }
 
   /** Punto (px) dentro del recorte, con un margen. */
@@ -292,6 +353,10 @@
     placeInCrop,
     clampPoint,
     clipInset,
+    visualBox,
+    isOutside,
+    clampBox,
+    computeFit,
     evseCharging,
     render,
     update,

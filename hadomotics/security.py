@@ -8,13 +8,17 @@ Cliente fino de Home Assistant, mismo patrón que Energía:
                                dentro de HA el panel usa hass.callService como
                                el usuario). El código de Alarmo se reenvía tal
                                cual y nunca se guarda ni se registra.
+- POST /api/security/control   zonas y sirena (solo admin; lista blanca exacta
+                               de entidades y servicios, ver CONTROL_*)
 - GET  /api/plan/overlays      capa de dibujo de los planos (plan_overlays.json)
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
+import math
 from pathlib import Path
 from typing import Callable
 
@@ -120,6 +124,135 @@ def validate_alarm(security_map: dict, body: dict, current_state: dict | None):
     return "alarm_control_panel", service, payload
 
 
+# ---------------------------------------------------------------------------
+# Zonas y sirena (lo mismo que el glance «Zonas Activas» y la pestaña «Sirena»
+# del dashboard Lovelace «Seguridad»). Lista blanca exacta, fija en el código:
+# aunque security_map.json cambie, solo se pueden tocar estas entidades.
+# ---------------------------------------------------------------------------
+ZONE_ENTITIES = frozenset(
+    "input_boolean.notificacion_alarma_" + z
+    for z in (
+        "entrada", "lateral_iz", "lateral_de", "piscina",
+        "hab1", "hab2", "hab3", "hab4", "hab5", "hab6", "hab7", "hab8",
+    )
+)
+SIREN_ENABLE_ENTITY = "input_boolean.alarma_sirena"
+SIREN_ENTITY = "siren.heiman_warningdevice_ef_3_0"
+SIREN_TONE_ENTITY = "select.heiman_warningdevice_ef_3_0_tono_de_sirena_predeterminado"
+SIREN_LEVEL_ENTITY = "select.heiman_warningdevice_ef_3_0_nivel_de_sirena_predeterminado"
+
+# entidad -> servicios permitidos (dominio, servicio)
+CONTROL_SERVICES: dict[str, frozenset] = {
+    **{e: frozenset({("input_boolean", "turn_on"), ("input_boolean", "turn_off")}) for e in ZONE_ENTITIES},
+    SIREN_ENABLE_ENTITY: frozenset({("input_boolean", "turn_on"), ("input_boolean", "turn_off")}),
+    SIREN_TONE_ENTITY: frozenset({("select", "select_option")}),
+    SIREN_LEVEL_ENTITY: frozenset({("select", "select_option")}),
+    # Igual que el interruptor de la tarjeta entities de Lovelace: siren.turn_on
+    # / siren.turn_off solo con entity_id (tono y nivel, los predeterminados).
+    SIREN_ENTITY: frozenset({("siren", "turn_on"), ("siren", "turn_off")}),
+}
+CONTROL_DOMAIN_SERVICES = frozenset(ds for v in CONTROL_SERVICES.values() for ds in v)
+
+
+def control_entities(security_map: dict) -> set[str]:
+    """Entidades controlables: las de la lista blanca que además están en el mapa."""
+    mapped = {z.get("entity") for z in security_map.get("zones") or []}
+    siren = security_map.get("siren") or {}
+    mapped.add(siren.get("entity"))
+    mapped |= {x.get("entity") for x in siren.get("extra") or []}
+    return {e for e in mapped if e in CONTROL_SERVICES}
+
+
+def validate_control(security_map: dict, body: dict, current_state: dict | None):
+    """Valida una orden de zona o sirena. Devuelve (domain, service, payload)
+    o lanza ValueError. La prueba de la sirena exige confirm: true."""
+    body = body or {}
+    entity_id = str(body.get("entity_id") or "")
+    if entity_id not in control_entities(security_map):
+        raise ValueError("entidad no permitida")
+    domain = entity_id.split(".", 1)[0]
+    service = str(body.get("service") or "")
+    if "." in service:
+        sdomain, service = service.split(".", 1)
+        if sdomain != domain:
+            raise ValueError("servicio no permitido")
+    if (domain, service) not in CONTROL_SERVICES[entity_id]:
+        raise ValueError(f"servicio {service or '(vacío)'} no permitido para {entity_id}")
+    payload = {"entity_id": entity_id}
+    if domain == "select":
+        option = body.get("option")
+        options = ((current_state or {}).get("attributes") or {}).get("options")
+        if not isinstance(options, list):
+            raise ValueError("opciones no disponibles")
+        if not isinstance(option, str) or option not in options:
+            raise ValueError("opción no permitida")
+        payload["option"] = option
+    if entity_id == SIREN_ENTITY and service == "turn_on" and body.get("confirm") is not True:
+        raise ValueError("la prueba de la sirena requiere confirmación")
+    return domain, service, payload
+
+
+# Posiciones de los marcadores de presencia movidos en modo edición.
+# Se guardan en la configuración del add-on (/data), no en el repositorio:
+#   {"<entity_id>": {"floor": "planta_baja", "x": 0.21, "y": 0.37, "outside": false}}
+# x, y son fracciones de la imagen del plano (como en security_map.json). Se
+# admiten valores fuera de [0, 1] para colocar un marcador fuera del dibujo.
+POSITION_MIN = -1.0
+POSITION_MAX = 2.0
+
+
+def _floor_keys(overlays: dict) -> set[str]:
+    return {f.get("key") for f in (overlays or {}).get("floors", []) if isinstance(f, dict) and f.get("key")}
+
+
+def _valid_record(rec, floor_keys: set[str]) -> bool:
+    if not isinstance(rec, dict) or rec.get("floor") not in floor_keys:
+        return False
+    for k in ("x", "y"):
+        v = rec.get(k)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+            return False
+        if not POSITION_MIN <= float(v) <= POSITION_MAX:
+            return False
+    return True
+
+
+def merge_positions(security_map: dict, positions: dict | None, overlays: dict | None = None) -> dict:
+    """Mapa con las posiciones guardadas aplicadas. Sin posiciones, el mapa
+    del repositorio tal cual (las posiciones de siempre son el valor por defecto)."""
+    merged = copy.deepcopy(security_map)
+    if not isinstance(positions, dict) or not positions:
+        return merged
+    keys = _floor_keys(overlays) if overlays is not None else {p.get("floor") for p in merged.get("presence", [])}
+    for p in merged.get("presence", []):
+        rec = positions.get(p.get("entity"))
+        if not _valid_record(rec, keys):
+            continue
+        p["floor"] = rec["floor"]
+        p["position"] = [round(float(rec["x"]), 5), round(float(rec["y"]), 5)]
+        p["outside"] = bool(rec.get("outside"))
+        p["custom"] = True
+    return merged
+
+
+def validate_position(security_map: dict, overlays: dict, body: dict) -> tuple[str, dict]:
+    """Valida una posición nueva de un marcador. Devuelve (entity_id, registro)."""
+    entity = str((body or {}).get("entity_id") or "")
+    if entity not in {p.get("entity") for p in security_map.get("presence", [])}:
+        raise ValueError("Unknown presence entity")
+    rec = {
+        "floor": (body or {}).get("floor"),
+        "x": (body or {}).get("x"),
+        "y": (body or {}).get("y"),
+    }
+    if not _valid_record(rec, _floor_keys(overlays)):
+        raise ValueError("Invalid floor or position")
+    rec["x"] = round(float(rec["x"]), 5)
+    rec["y"] = round(float(rec["y"]), 5)
+    rec["outside"] = bool((body or {}).get("outside"))
+    return entity, rec
+
+
 def create_blueprint(
     *,
     static_dir: Path,
@@ -129,11 +262,22 @@ def create_blueprint(
     invoke_service: Callable[[str, str, dict], tuple],
     map_path: Path = MAP_FILE,
     overlays_path: Path = OVERLAYS_FILE,
+    load_positions: Callable[[], dict] | None = None,
+    save_positions: Callable[[dict], None] | None = None,
+    is_admin: Callable[[], bool] | None = None,
 ) -> Blueprint:
     bp = Blueprint("security", __name__)
 
     def _map() -> dict:
         return load_map(map_path)
+
+    def _positions() -> dict:
+        try:
+            got = load_positions() if load_positions else {}
+        except Exception as exc:  # pragma: no cover - configuración ilegible
+            log.warning("Could not read security positions: %s", type(exc).__name__)
+            got = {}
+        return got if isinstance(got, dict) else {}
 
     @bp.route("/seguridad")
     def seguridad_page():
@@ -141,7 +285,31 @@ def create_blueprint(
 
     @bp.route("/api/security/map", methods=["GET"])
     def security_map():
-        return jsonify(_map())
+        data = merge_positions(_map(), _positions(), load_overlays(overlays_path))
+        try:
+            admin = bool(is_admin()) if is_admin else False
+        except Exception:  # pragma: no cover - sin respuesta de HA
+            admin = False
+        # Solo decide qué se muestra (la pestaña «Sirena», como en Lovelace);
+        # la autorización real es la del servidor en cada escritura.
+        data["user"] = {"admin": admin}
+        return jsonify(data)
+
+    @bp.route("/api/security/positions", methods=["PUT"])
+    def security_positions():
+        """Guarda la posición de un marcador (solo administradores: la puerta
+        de autenticación del add-on no deja escribir a nadie más)."""
+        if save_positions is None:
+            return jsonify({"ok": False, "error": "Positions cannot be saved"}), 501
+        try:
+            entity, rec = validate_position(_map(), load_overlays(overlays_path), request.get_json(silent=True) or {})
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        positions = dict(_positions())
+        positions[entity] = rec
+        save_positions(positions)
+        log.info("security position %s -> %s (outside=%s)", entity, rec["floor"], rec["outside"])
+        return jsonify({"ok": True, "entity_id": entity, **rec})
 
     @bp.route("/api/plan/overlays", methods=["GET"])
     def plan_overlays():
@@ -175,5 +343,24 @@ def create_blueprint(
             err = result.get("error") if isinstance(result, dict) else "Could not call Home Assistant service"
             return jsonify({"ok": False, "error": err}), status
         return jsonify({"ok": True, "service": f"{domain}.{service}"})
+
+    @bp.route("/api/security/control", methods=["POST"])
+    def security_control():
+        """Zonas y sirena fuera de Home Assistant. Solo administradores (la
+        puerta de autenticación del add-on), y solo la lista blanca exacta."""
+        body = request.get_json(silent=True) or {}
+        entity = str(body.get("entity_id") or "")
+        try:
+            domain, service, payload = validate_control(
+                _map(), body, get_state(entity) if entity.startswith("select.") else None
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        status, result = invoke_service(domain, service, payload)
+        log.info("security control %s.%s %s -> HTTP %s", domain, service, entity, status)
+        if status != 200:
+            err = result.get("error") if isinstance(result, dict) else "Could not call Home Assistant service"
+            return jsonify({"ok": False, "error": err}), status
+        return jsonify({"ok": True, "service": f"{domain}.{service}", "entity_id": entity})
 
     return bp
