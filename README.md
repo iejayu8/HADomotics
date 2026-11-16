@@ -1,6 +1,6 @@
 HADomotics is a project structured into multiple components, including a backend module, a custom Lovelace card, and a test suite. This repository contains the source code, configuration files, and development assets for the project.
 
-Latest addon version: 3.4.2
+Latest addon version: 3.5.0
 
 **Access**
 
@@ -10,13 +10,28 @@ The panel is part of Home Assistant (ingress). Host port **8099 is not published
 - **Lovelace card:** set `addon_url` to `/api/hassio_ingress/<token>` (copy the path from the sidebar panel). Administrators can leave it empty and the card will look the path up. Actions on the card go through Home Assistant (`hass.callService`), not the add-on proxy.
 - **Direct access (off by default):** in the add-on configuration enable **Allow direct access**, then on the Network page set a host port. Call the API with `Authorization: Bearer <long-lived access token>`. The token is checked with Home Assistant, and service calls run as that user. For a browser on another origin, set **CORS origins** to the exact origin (a wildcard is ignored).
 
-Service calls through the add-on are limited to floor-plan controls (toggle, cover position, lights, scenes, scripts, and the other device services listed in `hadomotics/server.py`) plus the Energía helpers `input_number.set_value` and `input_select.select_option`. `homeassistant.restart`, shell commands, and similar administrative services are rejected.
+Service calls through the add-on are limited to floor-plan controls (toggle, cover position, lights, scenes, scripts, and the other device services listed in `hadomotics/server.py`) plus the Energía helpers `input_number.set_value` and `input_select.select_option`. The Seguridad sub-app has its own admin-only endpoint, `POST /api/security/alarm`, which accepts only `alarm_control_panel.alarmo` and the arm/disarm modes Alarmo advertises. `homeassistant.restart`, shell commands, and similar administrative services are rejected.
 
 **Dispositivos and Energía**
 
 Version 3.4.0 is one add-on. The bottom buttons **Dispositivos** and **Energía** switch the two sub-apps. Dispositivos is the floor plan (view mode, edit mode, bulk colours, cover position, floor swipe). The floor switcher and the Edit button stay in that sub-app. Energía is the car-charging, solar/inverter and battery panel, plus a live power-flow view (solar strings, inverter, battery, grid, house and car).
 
 Updating from 3.3.0 keeps the same slug, so the installed add-on updates in place and existing floor plans in the add-on data directory are kept. Take a backup before you update. Since 3.4.2 Energía controls start in live mode and are sent to Home Assistant. Test mode (dry-run) is on only when you tick «Modo prueba» in Energía → ⚙ Ajustes and press Guardar (`localStorage` key `hadomotics.energy.testmode` = `1`); the old `hadomotics.energy.dryrun` key is ignored and removed. Inside Home Assistant those controls run as the signed-in user. The draft add-on from `feature/carga-energia` is superseded by this release; uninstall it if it is still present. Host port 8099 stays closed.
+
+**Seguridad**
+
+Since 3.5.0 the bottom buttons are **Seguridad**, **Dispositivos** and **Energía**, in that order. Seguridad shows the Alarmo panel as a single card centred above the floor plan, where you can arm or disarm the alarm. Each mode asks for confirmation, and asks for the code only when Alarmo requires one; the code is never stored. Two small buttons next to the card open overlays, one at a time:
+- **Zonas** shows the alarm zones.
+- **Detecciones** shows a counter of active detections and lists every motion sensor and camera with its state and last change in Madrid time.
+
+Close either with X, Esc, a click outside, or its button. The floor switcher is the same floating dock as in Dispositivos.
+
+Motion sensors and cameras are drawn on the same floor plans as Dispositivos, labelled with their name only. The icon colour shows the state: red for detection, green for no detection, dim grey for unavailable. The full state is in the marker's `aria-label` and `title`. The entities are listed in `hadomotics/security_map.json`.
+
+Drawing overlays live in `hadomotics/plan_overlays.json`:
+- the white-border crop of each plan, applied only to the reference images and only in view mode;
+- the HD versions of both plans;
+- the garage Tesla and the charger cable, shown only in Dispositivos; the cable animates when `sensor.evse_charging_power` is above 100 W.
 
 **Repository Structure**
 

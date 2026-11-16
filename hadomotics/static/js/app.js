@@ -8,6 +8,7 @@ function panelRoot() {
   let path = window.location.pathname.replace(/\/+$/, "");
   if (path.endsWith("/index.html")) path = path.slice(0, -"/index.html".length);
   if (path.endsWith("/energia")) path = path.slice(0, -"/energia".length);
+  if (path.endsWith("/seguridad")) path = path.slice(0, -"/seguridad".length);
   return path;
 }
 
@@ -360,8 +361,24 @@ function renderFloorCanvas(floor) {
   } else {
     hide(ep);
     show(cc, "inline-block");
-    img.src = `${API}/api/images/${floor.image}?t=${Date.now()}`;
+    delete img.dataset.baseWidth;
+    delete img.dataset.baseHeight;
+    delete img.dataset.hdApplied;
+    const originalSrc = `${API}/api/images/${floor.image}?t=${Date.now()}`;
+    img.onerror = () => {
+      // Si la versión HD no carga, volver a la imagen original.
+      if (img.dataset.hdApplied === "1") {
+        delete img.dataset.baseWidth;
+        delete img.dataset.baseHeight;
+        img.dataset.hdApplied = "failed";
+        img.src = originalSrc;
+      }
+    };
+    img.src = originalSrc;
     img.onload = () => {
+      // Planta con versión HD de la misma imagen: se carga conservando las
+      // medidas originales como coordenadas de los elementos.
+      if (window.HADomoticsPlan && window.HADomoticsPlan.maybeUseHd(img, floor, floors)) return;
       renderElements(floor.elements || []);
       // Ajustar cuando la imagen ya tiene tamaño: antes solo se hacía 50 ms
       // después de pedirla y, con la red del coche, aún no había cargado.
@@ -373,6 +390,9 @@ function renderFloorCanvas(floor) {
 
 /** Returns a short display string for sensor / climate / cover state */
 function _getElementStateText(el) {
+  if ((el.type === "button" || el.type === "custom") && (!el.entity_id || !entityStates[el.entity_id])) {
+    return _labelWithOnOff(el, null);
+  }
   if (!el.entity_id || !entityStates[el.entity_id]) return "";
   const s = entityStates[el.entity_id];
   const state = s.state;
@@ -385,6 +405,12 @@ function _getElementStateText(el) {
     return unit ? `${state} ${unit}` : String(state);
   }
 
+  // Botones y escenas: sin nombre visible el plano solo mostraba un icono.
+  // Se muestra el nombre y, si la entidad es de encendido/apagado, su estado.
+  if (type === "button" || type === "custom") {
+    return _labelWithOnOff(el, s);
+  }
+
   // Covers: show percentage if available, otherwise open/closed
   if (type === "cover") {
     const pos = s.attributes && s.attributes.current_position;
@@ -395,11 +421,26 @@ function _getElementStateText(el) {
   return "";
 }
 
+const ON_OFF_DOMAINS = new Set(["switch", "input_boolean", "light", "fan", "automation", "binary_sensor", "siren", "lock"]);
+
+/** "Nombre · ON/OFF" para interruptores; solo el nombre para escenas/scripts. */
+function _labelWithOnOff(el, s) {
+  const label = String(el.label || "").trim();
+  const domain = String(el.entity_id || "").split(".")[0];
+  const state = s ? String(s.state) : "";
+  if (ON_OFF_DOMAINS.has(domain) && (state === "on" || state === "off")) {
+    const onOff = state === "on" ? "ON" : "OFF";
+    return label ? `${label} · ${onOff}` : onOff;
+  }
+  return label;
+}
+
 function renderElements(elements) {
   const cc = $("canvasContainer");
   cc.querySelectorAll(".element-overlay").forEach((e) => e.remove());
 
   cc.classList.toggle("view-mode", viewMode);
+  const crop = currentPlanCrop();
 
   elements.forEach((el) => {
     const div = document.createElement("div");
@@ -413,8 +454,12 @@ function renderElements(elements) {
     const rotation = parseFloat(el.rotation) || 0;
     const stateText = _getElementStateText(el);
 
-    div.style.left = `${el.x}px`;
-    div.style.top = `${el.y}px`;
+    // Con el plano recortado (modo vista) los elementos que caen fuera del
+    // dibujo se muestran en el punto más cercano dentro; no se guarda nada.
+    const pos = window.HADomoticsPlan ? window.HADomoticsPlan.placeInCrop(el, crop) : { x: el.x, y: el.y, moved: false };
+    if (pos.moved) div.classList.add("crop-moved");
+    div.style.left = `${pos.x}px`;
+    div.style.top = `${pos.y}px`;
     div.style.width = `${el.width}px`;
     div.style.height = `${el.height}px`;
     div.style.background = _getElementBackground(el);
@@ -474,6 +519,31 @@ function renderElements(elements) {
 
     cc.appendChild(div);
   });
+  renderPlanOverlay();
+}
+
+/** Recorte de bordes blancos del plano actual: solo en modo vista (en
+ *  edición se ve la imagen entera para poder colocar cualquier elemento). */
+const CROP_LABEL_MARGIN = 18;
+function currentPlanCrop() {
+  const img = $("floorImage");
+  if (!viewMode || !img || !currentFloor || !window.HADomoticsPlan) return null;
+  const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
+  const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
+  if (!w || !h) return null;
+  return window.HADomoticsPlan.cropFor(currentFloor, floors, w, h);
+}
+
+/** Capa de dibujo fija del plano (Tesla, cable del cargador). */
+function renderPlanOverlay() {
+  const cc = $("canvasContainer");
+  const img = $("floorImage");
+  if (!cc || !img || !currentFloor || !window.HADomoticsPlan) return;
+  const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
+  const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
+  if (!w || !h) return;
+  window.HADomoticsPlan.render(cc, currentFloor, floors, w, h);
+  window.HADomoticsPlan.update(cc, currentFloor, floors, entityStates);
 }
 
 // ---------------------------------------------------------------------------
@@ -493,6 +563,9 @@ function _getElementBackground(el) {
 
 function updateElementStates() {
   if (!currentFloor || !$("canvasContainer")) return;
+  if (window.HADomoticsPlan) {
+    window.HADomoticsPlan.update($("canvasContainer"), currentFloor, floors, entityStates);
+  }
   (currentFloor.elements || []).forEach((el) => {
     const overlay = $("canvasContainer").querySelector(`[data-id="${el.id}"]`);
     if (!overlay) return;
@@ -994,6 +1067,7 @@ async function loadFloors() {
 // ---------------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", async () => {
+  if (window.HADomoticsPlan) await window.HADomoticsPlan.load();
   await loadFloors();
   setViewMode(true);
 
@@ -1170,9 +1244,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const navEnergia = $("navEnergia");
   if (navDispositivos) navDispositivos.addEventListener("click", () => showApp("dispositivos"));
   if (navEnergia) navEnergia.addEventListener("click", () => showApp("energia"));
+  const navSeguridad = $("navSeguridad");
+  if (navSeguridad) navSeguridad.addEventListener("click", () => showApp("seguridad"));
   const openPath = window.location.pathname.replace(/\/+$/, "");
   if (openPath.endsWith("/energia") || window.location.hash === "#energia") {
     showApp("energia");
+  } else if (openPath.endsWith("/seguridad") || window.location.hash === "#seguridad") {
+    showApp("seguridad");
   } else {
     showApp("dispositivos");
   }
@@ -1180,32 +1258,39 @@ document.addEventListener("DOMContentLoaded", async () => {
   installFloorSwipe();
 });
 
+const SUB_APPS = {
+  dispositivos: { pane: "appDispositivos", nav: "navDispositivos", title: "Dispositivos" },
+  energia: { pane: "appEnergia", nav: "navEnergia", title: "Energía" },
+  seguridad: { pane: "appSeguridad", nav: "navSeguridad", title: "Seguridad" },
+};
+
 function showApp(which) {
-  const energy = which === "energia";
-  const dev = $("appDispositivos");
-  const en = $("appEnergia");
-  if (dev) dev.hidden = energy;
-  if (en) en.hidden = !energy;
-  document.body.classList.toggle("app-energia", energy);
-  document.body.classList.toggle("app-dispositivos", !energy);
-  const navD = $("navDispositivos");
-  const navE = $("navEnergia");
-  if (navD) navD.classList.toggle("active", !energy);
-  if (navE) navE.classList.toggle("active", energy);
+  if (!SUB_APPS[which]) which = "dispositivos";
+  Object.keys(SUB_APPS).forEach((key) => {
+    const cfg = SUB_APPS[key];
+    const active = key === which;
+    const pane = $(cfg.pane);
+    if (pane) pane.hidden = !active;
+    const nav = $(cfg.nav);
+    if (nav) nav.classList.toggle("active", active);
+    document.body.classList.toggle(`app-${key}`, active);
+  });
   const sub = $("headerSubtitle");
-  if (sub) sub.textContent = energy ? "Energía" : "Dispositivos";
-  document.title = energy ? "HADomotics · Energía" : "HADomotics · Dispositivos";
+  if (sub) sub.textContent = SUB_APPS[which].title;
+  document.title = `HADomotics · ${SUB_APPS[which].title}`;
   if (window.history && window.history.replaceState) {
     let nextPath = window.location.pathname.replace(/\/+$/, "");
-    if (nextPath.endsWith("/energia")) nextPath = nextPath.slice(0, -"/energia".length);
+    nextPath = nextPath.replace(/\/(energia|seguridad)$/, "");
     if (!nextPath) nextPath = "/";
-    const hash = energy ? "#energia" : "#dispositivos";
-    window.history.replaceState(null, "", nextPath + hash);
+    window.history.replaceState(null, "", nextPath + "#" + which);
   }
-  if (energy && window.HADomoticsEnergy && window.HADomoticsEnergy.ensureStarted) {
+  if (which === "energia" && window.HADomoticsEnergy && window.HADomoticsEnergy.ensureStarted) {
     window.HADomoticsEnergy.ensureStarted();
   }
-  if (!energy) setTimeout(fitFloorPlan, 50);
+  if (which === "seguridad" && window.HADomoticsSecurity && window.HADomoticsSecurity.ensureStarted) {
+    window.HADomoticsSecurity.ensureStarted();
+  }
+  if (which === "dispositivos") setTimeout(fitFloorPlan, 50);
 }
 
 window.HADomotics.showApp = showApp;
@@ -1286,25 +1371,36 @@ function fitFloorPlan() {
   const padR = parseFloat(cs.paddingRight) || 0;
   const padT = parseFloat(cs.paddingTop) || 0;
   const padB = parseFloat(cs.paddingBottom) || 0;
-  const availableWidth = wrapper.clientWidth - padL - padR;
+  // Con el plano recortado al dibujo, un margen lateral deja ver las
+  // etiquetas de los elementos pegados a las paredes exteriores.
+  const cropMargin = currentPlanCrop() ? CROP_LABEL_MARGIN : 0;
+  const availableWidth = wrapper.clientWidth - padL - padR - 2 * cropMargin;
   const availableHeight = wrapper.clientHeight - padT - padB;
 
   if (availableWidth <= 0 || availableHeight <= 0) return;
 
   // Tamaño de la imagen original: los elementos se guardan en esos píxeles,
   // así que escalar el contenedor completo los mantiene alineados.
-  const baseWidth = img.naturalWidth;
-  const baseHeight = img.naturalHeight;
+  const baseWidth = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
+  const baseHeight = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
   img.style.width = `${baseWidth}px`;
   img.style.height = `${baseHeight}px`;
 
+  // Recorte de los bordes blancos (modo vista): se ajusta el dibujo y no la
+  // imagen entera. Los elementos siguen en píxeles de la imagen original.
+  const crop = currentPlanCrop();
+  const view = crop || { x: 0, y: 0, w: baseWidth, h: baseHeight };
+  img.style.clipPath = crop ? window.HADomoticsPlan.clipInset(crop) : "";
+
   // "contain": el plano entero cabe en el área, con su proporción.
-  const scale = Math.min(availableWidth / baseWidth, availableHeight / baseHeight);
+  const scale = Math.min(availableWidth / view.w, availableHeight / view.h);
   floorScale = scale;
+  // Las etiquetas de estado mantienen un tamaño legible al reducir el plano.
+  container.style.setProperty("--fp-inv", String(Math.min(3, Math.max(1, 1 / scale))));
 
   // Centrado dentro del área útil.
-  const offsetX = Math.max(0, (availableWidth - baseWidth * scale) / 2);
-  const offsetY = Math.max(0, (availableHeight - baseHeight * scale) / 2);
+  const offsetX = cropMargin + Math.max(0, (availableWidth - view.w * scale) / 2) - view.x * scale;
+  const offsetY = Math.max(0, (availableHeight - view.h * scale) / 2) - view.y * scale;
 
   container.style.transformOrigin = "top left";
   container.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;

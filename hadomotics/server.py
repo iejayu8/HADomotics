@@ -416,6 +416,10 @@ _READ_ONLY_EXACT = {
     "/api/energy/map",
     "/api/energy/state",
     "/api/energy/flow",
+    "/seguridad",
+    "/api/security/map",
+    "/api/security/state",
+    "/api/plan/overlays",
 }
 
 
@@ -1223,6 +1227,43 @@ app.register_blueprint(_energy_blueprint(
     get_all_states=_energy_all_states,
     is_ws_connected=lambda: _ha_ws_connected,
     invoke_service=_energy_invoke,
+))
+
+
+from security import ALARM_SERVICES as _ALARM_SERVICES  # noqa: E402
+from security import create_blueprint as _security_blueprint  # noqa: E402
+
+
+def _security_invoke(domain: str, service: str, payload: dict):
+    """Arm/disarm the mapped Alarmo panel as this request. The code is never logged."""
+    if domain != "alarm_control_panel" or service not in _ALARM_SERVICES:
+        log.warning("Blocked security service %s.%s from %s", domain, service, _peer_ip())
+        return 403, {"ok": False, "error": "Service is not allowed"}
+    token = _token_for_request()
+    if not token:
+        return 503, {"ok": False, "error": "No supervisor token"}
+    try:
+        resp = requests.post(
+            f"{_api_base_for_request()}/services/{domain}/{service}",
+            headers=ha_headers(token),
+            json=payload,
+            timeout=10,
+            allow_redirects=False,
+        )
+    except Exception as exc:
+        log.warning("security %s.%s failed: %s", domain, service, type(exc).__name__)
+        return 503, {"ok": False, "error": "Could not call Home Assistant service"}
+    if resp.status_code >= 400:
+        return 502, {"ok": False, "error": f"HA HTTP {resp.status_code}"}
+    return 200, {"ok": True}
+
+
+app.register_blueprint(_security_blueprint(
+    static_dir=Path(app.static_folder),
+    get_state=_energy_get_state,
+    get_all_states=_energy_all_states,
+    is_ws_connected=lambda: _ha_ws_connected,
+    invoke_service=_security_invoke,
 ))
 
 

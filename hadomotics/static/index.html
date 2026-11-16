@@ -6,6 +6,7 @@
   <title>HADomotics</title>
   <link rel="stylesheet" href="static/css/style.css" />
   <link rel="stylesheet" href="static/energia/css/energy.css" />
+  <link rel="stylesheet" href="static/seguridad/css/security.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
 </head>
 <body>
@@ -276,7 +277,81 @@
     <div class="toast hidden" id="toast"></div>
   </div>
 
+  <div id="appSeguridad" class="app-pane" hidden>
+    <div class="sec-layout">
+      <div class="sec-alarm-bar">
+        <section class="sec-card sec-alarm-card" id="secAlarmCard" aria-label="Panel de Alarma">
+          <div class="sec-alarm-head">
+            <span class="sec-card-title">Panel de Alarma</span>
+            <span class="conn" id="secConn" title="Conexión"><span class="dot"></span><span id="secConnText">Desconectado</span></span>
+          </div>
+          <div class="sec-alarm-row">
+            <div class="sec-alarm-info">
+              <div class="sec-alarm-state" id="secAlarmState">—</div>
+              <div class="sec-alarm-meta" id="secAlarmMeta"></div>
+            </div>
+            <div class="sec-modes" id="secModes"></div>
+          </div>
+        </section>
+        <div class="sec-tools">
+          <button type="button" class="sec-zones-btn sec-tool-btn" id="secZonesBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="secZonesPop">
+            <span class="material-icons">grid_view</span><span class="lbl">Zonas</span><span class="badge" id="secZonesBadge"></span>
+          </button>
+          <button type="button" class="sec-det-btn sec-tool-btn" id="secDetBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="secDetPop">
+            <span class="material-icons">sensors</span><span class="lbl">Detecciones</span><span class="badge" id="secDetBadge"></span>
+          </button>
+        </div>
+      </div>
+      <div class="sec-canvas-wrapper" id="secCanvasWrapper">
+        <div class="sec-empty" id="secEmpty">Cargando planos…</div>
+        <div class="sec-canvas" id="secCanvas" hidden>
+          <img id="secFloorImage" alt="Plano" />
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-dock" id="secDock">
+      <div class="floor-switcher" id="secFloorSwitcher"></div>
+    </div>
+
+    <div class="sec-pop hidden" id="secZonesPop" role="dialog" aria-modal="false" aria-labelledby="secZonesTitle">
+      <div class="sec-pop-card">
+        <header>
+          <div><h3 id="secZonesTitle">Zonas de la alarma</h3><div class="sub" id="secZonesSub"></div></div>
+          <button type="button" class="sec-pop-close" id="secZonesClose" aria-label="Cerrar"><span class="material-icons">close</span></button>
+        </header>
+        <div class="sec-zones" id="secZones"></div>
+      </div>
+    </div>
+
+    <div class="sec-pop hidden" id="secDetPop" role="dialog" aria-modal="false" aria-labelledby="secDetTitle">
+      <div class="sec-pop-card">
+        <header>
+          <div><h3 id="secDetTitle">Detecciones</h3><div class="sub" id="secDetSub"></div></div>
+          <button type="button" class="sec-pop-close" id="secDetClose" aria-label="Cerrar"><span class="material-icons">close</span></button>
+        </header>
+        <div class="det-legend" aria-hidden="true"><span class="on">Detección</span><span class="off">Sin detección</span><span class="na">No disponible</span></div>
+        <div id="secDetList"></div>
+      </div>
+    </div>
+
+    <div class="sheet hidden" id="secConfirm">
+      <div class="sheet-body small">
+        <p id="secConfirmText"></p>
+        <label class="sec-code hidden" id="secCodeRow">Código de la alarma
+          <input id="secCode" type="password" inputmode="numeric" autocomplete="off" />
+        </label>
+        <div class="actions"><button id="secConfirmYes" class="primary" type="button">Confirmar</button><button id="secConfirmNo" type="button">Cancelar</button></div>
+      </div>
+    </div>
+    <div class="toast hidden" id="secToast"></div>
+  </div>
+
   <nav class="app-nav" id="appNav">
+    <button type="button" id="navSeguridad" data-app="seguridad">
+      <span class="material-icons">shield</span>
+      Seguridad
+    </button>
     <button type="button" id="navDispositivos" data-app="dispositivos" class="active">
       <span class="material-icons">devices</span>
       Dispositivos
@@ -313,9 +388,11 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
+  <script src="static/js/plan_overlays.js"></script>
   <script src="static/js/app.js"></script>
   <script src="static/energia/js/transport.js"></script>
   <script src="static/energia/js/flow.js"></script>
   <script src="static/energia/js/energy.js"></script>
+  <script src="static/seguridad/js/security.js"></script>
 </body>
 </html>

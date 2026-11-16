@@ -1,0 +1,42 @@
+{
+  "_doc": "Vista Seguridad. Entidades copiadas del dashboard Lovelace «dashboard-seguridad» (vistas Alarma, Sirena y Detección Dinámica). Las posiciones de presencia son fracciones (0-1) de la imagen del plano de HADomotics; se han trasladado de la vista «Detección Dinámica» (plano arquitectónico 1056x910) con una transformación lineal por planta según el contorno del edificio. 'position': null = no se dibuja (sin ubicación fiable).",
+  "alarm": {
+    "entity": "alarm_control_panel.alarmo",
+    "name": "Panel de Alarma",
+    "modes": ["disarmed", "armed_night", "armed_away"]
+  },
+  "zones": [
+    {"entity": "input_boolean.notificacion_alarma_entrada", "name": "Entrada"},
+    {"entity": "input_boolean.notificacion_alarma_lateral_iz", "name": "Lateral.Iz"},
+    {"entity": "input_boolean.notificacion_alarma_lateral_de", "name": "Lateral.De"},
+    {"entity": "input_boolean.notificacion_alarma_piscina", "name": "Piscina"},
+    {"entity": "input_boolean.notificacion_alarma_hab1", "name": "Ventana Cama"},
+    {"entity": "input_boolean.notificacion_alarma_hab2", "name": "Hab. Juegos"},
+    {"entity": "input_boolean.notificacion_alarma_hab3", "name": "Pasillo abajo"},
+    {"entity": "input_boolean.notificacion_alarma_hab4", "name": "Entrada sofá"},
+    {"entity": "input_boolean.notificacion_alarma_hab5", "name": "Entrada cocina"},
+    {"entity": "input_boolean.notificacion_alarma_hab6", "name": "Ventana vestidor"},
+    {"entity": "input_boolean.notificacion_alarma_hab7", "name": "Pasillo arriba"},
+    {"entity": "input_boolean.notificacion_alarma_hab8", "name": "Hab. Niños"}
+  ],
+  "siren": {
+    "entity": "siren.heiman_warningdevice_ef_3_0",
+    "name": "Sirena",
+    "extra": [
+      {"entity": "input_boolean.alarma_sirena", "name": "Sirena con la alarma"},
+      {"entity": "select.heiman_warningdevice_ef_3_0_nivel_de_sirena_predeterminado", "name": "Nivel"},
+      {"entity": "select.heiman_warningdevice_ef_3_0_tono_de_sirena_predeterminado", "name": "Tono"}
+    ]
+  },
+  "presence": [
+    {"entity": "binary_sensor.sensormovimiento6", "name": "Vestidor suite", "floor": "planta_1", "position": [0.1338, 0.3344]},
+    {"entity": "binary_sensor.sensormovimiento1", "name": "Dormitorio suite", "floor": "planta_1", "position": [0.1338, 0.6948]},
+    {"entity": "binary_sensor.sensormovimiento7", "name": "Distribuidor (planta 1)", "floor": "planta_1", "position": [0.4236, 0.5752]},
+    {"entity": "binary_sensor.sensormovimiento2", "name": "Dormitorio 01", "floor": "planta_1", "position": [0.9057, 0.3113]},
+    {"entity": "binary_sensor.sensormovimiento5", "name": "Cocina / comedor", "floor": "planta_baja", "position": [0.2098, 0.3655]},
+    {"entity": "binary_sensor.sensormovimiento4", "name": "Estar (sofá)", "floor": "planta_baja", "position": [0.1502, 0.7677]},
+    {"entity": "binary_sensor.sensormovimiento3", "name": "Baño 01 / distribuidor", "floor": "planta_baja", "position": [0.4589, 0.6549]},
+    {"entity": "binary_sensor.reolink_persona", "name": "Cámara exterior izquierda", "floor": "planta_baja", "position": [0.0084, 0.5435], "exterior": true},
+    {"entity": "binary_sensor.reolink1_persona", "name": "Cámara exterior derecha (garaje)", "floor": "planta_baja", "position": [0.9895, 0.5217], "exterior": true}
+  ]
+}

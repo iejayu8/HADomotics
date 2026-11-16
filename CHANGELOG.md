@@ -1,5 +1,37 @@
 # Changelog
 
+## 3.5.0
+
+### Added
+- **Tercera sub-app: Seguridad.** Abajo, los botones quedan en este orden: **Seguridad**, **Dispositivos**, **Energía**. Seguridad usa los mismos planos que Dispositivos y deja todo el espacio al plano:
+  - Arriba, centrada sobre el plano, la tarjeta **Panel de Alarma** (`alarm_control_panel.alarmo`) con su estado y los modos que Alarmo anuncia en `supported_features` y que coinciden con el panel: Desarmar, Noche y Ausente.
+    - Cada modo pide confirmación.
+    - El código se pide solo si `code_format` lo exige (para armar, además, `code_arm_required`). Nunca se guarda y se borra al cerrar el diálogo.
+    - Si Alarmo informa de sensores abiertos, la tarjeta indica cuántos hay.
+  - A la derecha de la tarjeta, un botón discreto **Zonas** muestra superpuestas las 12 zonas (`input_boolean.notificacion_alarma_*`). Se cierra con la X, con Esc, pulsando fuera o pulsando otra vez el botón.
+  - El selector de planta va en el mismo dock flotante que en Dispositivos.
+  - **Detección dinámica en el plano.** Cada sensor de movimiento y cada cámara con detección de personas se dibuja en su habitación, rotulado solo con su nombre (por ejemplo «Cocina / comedor»).
+    - El estado se ve por el color del icono: rojo `#ef4444` cuando hay detección (con un pulso suave), verde `#22c55e` cuando no la hay y gris apagado `#64748b` cuando no está disponible.
+    - El estado completo y la hora del último cambio están en `aria-label` y en `title`.
+  - Junto a «Zonas», un botón discreto **Detecciones** con el número de detecciones activas despliega la lista de sensores y cámaras: nombre, estado con su color y último cambio en hora de Madrid. Primero aparece la planta que estás viendo.
+    - Se cierra con la X, con Esc, pulsando fuera o pulsando otra vez el botón.
+    - «Zonas» y «Detecciones» nunca se abren a la vez: al abrir uno se cierra el otro.
+- Dentro de Home Assistant, las llamadas a la alarma se hacen como tu usuario (`hass.callService`). Fuera, van a `POST /api/security/alarm`, que es solo para administradores y solo admite la entidad de alarma mapeada y los modos que anuncia. La lectura (`/api/security/map`, `/api/security/state`, `/api/plan/overlays`) también está abierta a usuarios de ingress que no son administradores.
+- **Tesla Model Y Juniper (2025) gris en el garaje de Dispositivos.** Es una imagen realista vista desde arriba, con fondo transparente, sombra suave y la misma luz que el plano (`static/plans/tesla_model_y.webp`). Forma parte del dibujo: no se puede pulsar.
+- **Cable del cargador Deye al puerto de carga** (trasera izquierda del coche), solo en Dispositivos.
+  - Con carga real, un flujo verde animado va del cargador al coche. Hay carga real cuando `sensor.evse_charging_power` supera 100 W (si viene en kW, se convierte) o cuando `sensor.evse_charging_operational_state` es `Charging`.
+  - En reposo, el cable está gris y quieto.
+  - Con «reducir movimiento» no se anima.
+  - El límite `number.evse_charging_power_limit` no se usa.
+
+### Changed
+- **Planos sin bordes blancos.** En modo vista, Dispositivos y Seguridad recortan los márgenes blancos de la planta baja y de la planta 1, y el dibujo ocupa más pantalla.
+  - El recorte se hace en pantalla (`clip-path` y ajuste de escala). Las imágenes no se tocan y los elementos conservan sus coordenadas guardadas, así que cada icono sigue en su sitio del dibujo.
+  - El recorte se define en fracciones de la imagen (`plan_overlays.json` → `crop`). Solo se aplica si la imagen es la de referencia (1425×736 y 1315×652, también cuando se muestra la versión HD). Si subes otra imagen, se ve entera.
+  - Los elementos que quedaban en el margen blanco se muestran en el punto más cercano dentro del dibujo; no se guarda nada. Depuradora, Día y Noche tienen una posición fija junto a su esquina. En modo edición se ve la imagen completa con las posiciones reales.
+- **Los botones y elementos personalizados muestran su nombre en modo vista**, con su estado ON/OFF si la entidad lo tiene (por ejemplo «Depuradora · OFF», «Día», «Noche»). Hasta ahora, en modo vista solo se veía el icono. Las etiquetas siguen siendo legibles aunque el plano se reduzca.
+- **Planta baja y planta 1 más nítidas.** Si el plano es la imagen original, se muestra una versión reescalada ×2 y limpiada (`static/plans/planta_baja_hd.webp`, `static/plans/planta1_hd.webp`) con la misma proporción exacta. Los elementos conservan sus coordenadas. Si subes otra imagen, se usa la tuya.
+
 ## 3.4.2
 
 ### Fixed
