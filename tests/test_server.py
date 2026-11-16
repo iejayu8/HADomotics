@@ -1593,3 +1593,101 @@ def test_energy_flow_reads_cache_without_ha_token_global(client):
         assert srv.HA_TOKEN == ""
     finally:
         tokens.close()
+
+
+# ---------------------------------------------------------------------------
+# Seguridad on top of the ingress / allowlist model
+# ---------------------------------------------------------------------------
+
+
+def test_lan_cannot_read_security(lan_client):
+    from unittest.mock import patch
+
+    with patch("server.requests.get") as mock_get, patch("server.requests.post") as mock_post:
+        assert lan_client.get("/seguridad").status_code == 401
+        assert lan_client.get("/api/security/map").status_code == 401
+        assert lan_client.get("/api/security/state").status_code == 401
+        assert lan_client.get("/api/plan/overlays").status_code == 401
+        posted = lan_client.post(
+            "/api/security/alarm",
+            data=json.dumps({"entity_id": "alarm_control_panel.alarmo", "service": "alarm_disarm"}),
+            content_type="application/json",
+        )
+    assert posted.status_code == 401
+    mock_get.assert_not_called()
+    mock_post.assert_not_called()
+
+
+def test_ingress_member_reads_security_but_cannot_arm(ingress_member):
+    from unittest.mock import patch
+
+    assert ingress_member.get("/seguridad").status_code == 200
+    assert ingress_member.get("/api/security/map").get_json()["alarm"]["entity"] == "alarm_control_panel.alarmo"
+    assert "states" in ingress_member.get("/api/security/state").get_json()
+    assert "floors" in ingress_member.get("/api/plan/overlays").get_json()
+    with patch("server.requests.post") as mock_post:
+        denied = ingress_member.post(
+            "/api/security/alarm",
+            data=json.dumps({"entity_id": "alarm_control_panel.alarmo", "service": "alarm_arm_away"}),
+            content_type="application/json",
+        )
+    assert denied.status_code == 403
+    mock_post.assert_not_called()
+
+
+def test_security_state_only_returns_mapped_entities(client):
+    import server as srv
+
+    srv._state_cache.update({
+        "alarm_control_panel.alarmo": {"entity_id": "alarm_control_panel.alarmo", "state": "disarmed", "attributes": {}},
+        "sensor.evse_charging_power": {"entity_id": "sensor.evse_charging_power", "state": "7200", "attributes": {"unit_of_measurement": "W"}},
+        "lock.puerta": {"entity_id": "lock.puerta", "state": "locked", "attributes": {}},
+    })
+    try:
+        ids = {s["entity_id"] for s in client.get("/api/security/state").get_json()["states"]}
+    finally:
+        srv._state_cache.clear()
+    assert {"alarm_control_panel.alarmo", "sensor.evse_charging_power"} <= ids
+    assert "lock.puerta" not in ids
+
+
+def test_admin_arm_forwards_code_without_logging_it(client, caplog):
+    import logging
+    import server as srv
+    from unittest.mock import patch, MagicMock
+
+    tokens = _Tokens(supervisor="supervisor-secret")
+    srv._state_cache["alarm_control_panel.alarmo"] = {
+        "entity_id": "alarm_control_panel.alarmo",
+        "state": "armed_away",
+        "attributes": {"code_format": "number", "code_arm_required": False, "supported_features": 14},
+    }
+    mock_resp = MagicMock(status_code=200)
+    try:
+        with caplog.at_level(logging.DEBUG), patch("server.requests.post", return_value=mock_resp) as mock_post:
+            missing = client.post(
+                "/api/security/alarm",
+                data=json.dumps({"entity_id": "alarm_control_panel.alarmo", "service": "alarm_disarm"}),
+                content_type="application/json",
+            )
+            assert missing.status_code == 400
+            mock_post.assert_not_called()
+            ok = client.post(
+                "/api/security/alarm",
+                data=json.dumps({"entity_id": "alarm_control_panel.alarmo", "service": "alarm_disarm", "code": "97531"}),
+                content_type="application/json",
+            )
+            assert ok.status_code == 200
+            args, kwargs = mock_post.call_args
+            assert args[0].endswith("/services/alarm_control_panel/alarm_disarm")
+            assert kwargs["json"] == {"entity_id": "alarm_control_panel.alarmo", "code": "97531"}
+            bad = client.post(
+                "/api/security/alarm",
+                data=json.dumps({"entity_id": "alarm_control_panel.alarmo", "service": "alarm_trigger"}),
+                content_type="application/json",
+            )
+            assert bad.status_code == 400
+    finally:
+        tokens.close()
+    assert "97531" not in caplog.text
+    assert "97531" not in json.dumps(ok.get_json())

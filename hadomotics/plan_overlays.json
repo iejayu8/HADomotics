@@ -1,0 +1,57 @@
+{
+  "_doc": "Capa de dibujo fija sobre los planos (no interactiva). Coordenadas en fracción (0-1) del ancho/alto de la imagen del plano, para que no dependan de su resolución. Las plantas se reconocen por nombre normalizado (match) o, si no, por orden.",
+  "floors": [
+    {
+      "key": "planta_baja",
+      "match": [
+        "plantabaja",
+        "plantabaixa",
+        "planta0",
+        "baja",
+        "groundfloor"
+      ],
+      "order_fallback": 0,
+      "reference_size": [
+        1425,
+        736
+      ],
+      "tesla": {
+        "x": 0.6737,
+        "y": 0.2446,
+        "w": 0.2498,
+        "h": 0.197,
+        "color": "#8f949b"
+      },
+      "evse_cable": {
+        "from": [
+          0.6526,
+          0.4389
+        ],
+        "power_entity": "sensor.evse_charging_power",
+        "state_entity": "sensor.evse_charging_operational_state",
+        "threshold_w": 100
+      }
+    },
+    {
+      "key": "planta_1",
+      "match": [
+        "planta1",
+        "plantaprimera",
+        "primera",
+        "firstfloor"
+      ],
+      "order_fallback": 1,
+      "reference_size": [
+        1315,
+        652
+      ],
+      "image_hd": {
+        "src": "static/plans/planta1_hd.webp",
+        "match_size": [
+          1315,
+          652
+        ]
+      }
+    }
+  ]
+}

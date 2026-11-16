@@ -6,6 +6,7 @@
   <title>HADomotics</title>
   <link rel="stylesheet" href="static/css/style.css" />
   <link rel="stylesheet" href="static/energia/css/energy.css" />
+  <link rel="stylesheet" href="static/seguridad/css/security.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
 </head>
 <body>
@@ -276,6 +277,59 @@
     <div class="toast hidden" id="toast"></div>
   </div>
 
+  <div id="appSeguridad" class="app-pane" hidden>
+    <header class="sec-top">
+      <div class="brand">HADomotics <span>Seguridad</span></div>
+      <div class="conn" id="secConn" title="Conexión"><span class="dot"></span><span id="secConnText">Desconectado</span></div>
+    </header>
+    <div class="sec-layout">
+      <section class="sec-plan-area">
+        <div class="sec-floor-switcher" id="secFloorSwitcher"></div>
+        <div class="sec-canvas-wrapper" id="secCanvasWrapper">
+          <div class="sec-empty" id="secEmpty">Cargando planos…</div>
+          <div class="sec-canvas" id="secCanvas" hidden>
+            <img id="secFloorImage" alt="Plano" />
+          </div>
+        </div>
+      </section>
+      <aside class="sec-side">
+        <div class="sec-card" id="secAlarmCard">
+          <div class="sec-card-title">Panel de Alarma</div>
+          <div class="sec-alarm-state" id="secAlarmState">—</div>
+          <div class="sec-alarm-meta" id="secAlarmMeta"></div>
+          <div class="sec-modes" id="secModes"></div>
+        </div>
+        <div class="sec-card">
+          <div class="sec-card-title">Zonas activas</div>
+          <div class="sec-zones" id="secZones"></div>
+        </div>
+        <div class="sec-card">
+          <div class="sec-card-title">Sensores abiertos / disparados</div>
+          <ul class="sec-list" id="secOpen"></ul>
+        </div>
+        <div class="sec-card">
+          <div class="sec-card-title">Sirena</div>
+          <ul class="sec-list" id="secSiren"></ul>
+        </div>
+        <div class="sec-card">
+          <div class="sec-card-title">Presencia</div>
+          <ul class="sec-list" id="secPresence"></ul>
+        </div>
+      </aside>
+    </div>
+
+    <div class="sheet hidden" id="secConfirm">
+      <div class="sheet-body small">
+        <p id="secConfirmText"></p>
+        <label class="sec-code hidden" id="secCodeRow">Código de la alarma
+          <input id="secCode" type="password" inputmode="numeric" autocomplete="off" />
+        </label>
+        <div class="actions"><button id="secConfirmYes" class="primary" type="button">Confirmar</button><button id="secConfirmNo" type="button">Cancelar</button></div>
+      </div>
+    </div>
+    <div class="toast hidden" id="secToast"></div>
+  </div>
+
   <nav class="app-nav" id="appNav">
     <button type="button" id="navDispositivos" data-app="dispositivos" class="active">
       <span class="material-icons">devices</span>
@@ -284,6 +338,10 @@
     <button type="button" id="navEnergia" data-app="energia">
       <span class="material-icons">bolt</span>
       Energía
+    </button>
+    <button type="button" id="navSeguridad" data-app="seguridad">
+      <span class="material-icons">shield</span>
+      Seguridad
     </button>
   </nav>
 
@@ -313,9 +371,11 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
+  <script src="static/js/plan_overlays.js"></script>
   <script src="static/js/app.js"></script>
   <script src="static/energia/js/transport.js"></script>
   <script src="static/energia/js/flow.js"></script>
   <script src="static/energia/js/energy.js"></script>
+  <script src="static/seguridad/js/security.js"></script>
 </body>
 </html>

@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.5.0
+
+### Added
+- **Tercera sub-app: Seguridad.** Nuevo botón inferior **Seguridad**, junto a Dispositivos y Energía. Usa los mismos planos que Dispositivos y trae lo mismo que el panel lateral «Seguridad» de Home Assistant:
+  - **Panel de alarma** (`alarm_control_panel.alarmo`), con su estado y los modos que Alarmo anuncia en `supported_features` y que coinciden con el panel: Desarmar, Noche y Ausente. Cada modo pide confirmación. El código se pide solo si `code_format` (y, para armar, `code_arm_required`) lo exige; nunca se guarda y se borra al cerrar el diálogo.
+  - Las 12 **zonas** del panel (`input_boolean.notificacion_alarma_*`) y la lista de **sensores abiertos o disparados**: alarma disparada, `open_sensors` de Alarmo y presencia activa.
+  - La **sirena** `siren.heiman_warningdevice_ef_3_0` y los helpers `input_boolean.alarma_sirena`, nivel y tono. Solo se muestran; no se controlan.
+  - **Detección dinámica en el plano.** Cada sensor de movimiento y cámara con detección de personas se dibuja en su habitación. Se ilumina y late cuando detecta, y muestra su último cambio en hora de Madrid.
+- Las llamadas a la alarma se hacen como tu usuario (`hass.callService`) dentro de Home Assistant. Fuera, van a `POST /api/security/alarm`, que es solo para administradores y solo admite la entidad de alarma mapeada y los modos que anuncia. La lectura (`/api/security/map`, `/api/security/state`, `/api/plan/overlays`) se permite a usuarios de ingress no administradores.
+- **Tesla Model Y gris** dibujado en vista cenital en el garaje de la planta baja, en Dispositivos y en Seguridad. Forma parte del dibujo: no se puede pulsar ni tapa elementos.
+- **Cable del cargador Deye al puerto del coche** (trasera izquierda). Cuando hay carga real, un flujo verde animado va del cargador al coche. La carga real es `sensor.evse_charging_power` > 100 W, con conversión si viene en kW, o `sensor.evse_charging_operational_state` = `Charging`. En reposo el cable está gris y quieto. Con «reducir movimiento» no se anima. El límite `number.evse_charging_power_limit` no se usa.
+
+### Changed
+- **Los botones y elementos personalizados muestran su nombre en modo vista**, con su estado ON/OFF cuando la entidad lo tiene (por ejemplo «Depuradora · ON», «Día», «Noche»). Hasta ahora, en modo vista solo se veía el icono. Las etiquetas mantienen su tamaño legible cuando el plano se reduce.
+- **Planta 1 más nítida.** Si el plano de la planta 1 es la imagen original de 1315×652, se muestra una versión reescalada ×2 y limpiada (`static/plans/planta1_hd.webp`) con la misma proporción. Los elementos conservan sus coordenadas. Si subes otra imagen, se usa la tuya.
+
 ## 3.4.2
 
 ### Fixed
