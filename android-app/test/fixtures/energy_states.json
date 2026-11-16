@@ -1,0 +1,206 @@
+{
+ "sensor.inverter_pv_power": {
+  "state": "-1096.3",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_pv1_power": {
+  "state": "1353.8",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_pv1_voltage": {
+  "state": "-40.4",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_pv1_current": {
+  "state": "1831.4",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_pv2_power": {
+  "state": "2005.8",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_pv2_voltage": {
+  "state": "-2475.8",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_pv2_current": {
+  "state": "-2894.7",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_pv3_power": {
+  "state": "3699.8",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_pv3_voltage": {
+  "state": "-925.2",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_pv3_current": {
+  "state": "-1125.4",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_today_production": {
+  "state": "29.87",
+  "attributes": {
+   "unit_of_measurement": "kWh"
+  }
+ },
+ "sensor.inverter_battery": {
+  "state": "64",
+  "attributes": {
+   "unit_of_measurement": "%"
+  }
+ },
+ "sensor.inverter_battery_power": {
+  "state": "762.1",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_battery_state": {
+  "state": "Normal",
+  "attributes": {}
+ },
+ "sensor.inverter_battery_voltage": {
+  "state": "3691.7",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_battery_current": {
+  "state": "810.8",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_battery_temperature": {
+  "state": "2112.5",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_today_battery_charge": {
+  "state": "4.52",
+  "attributes": {
+   "unit_of_measurement": "kWh"
+  }
+ },
+ "sensor.inverter_today_battery_discharge": {
+  "state": "19.05",
+  "attributes": {
+   "unit_of_measurement": "kWh"
+  }
+ },
+ "sensor.inverter_external_consumption": {
+  "state": "3944.4",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "binary_sensor.inverter_grid": {
+  "state": "on",
+  "attributes": {}
+ },
+ "sensor.inverter_today_energy_import": {
+  "state": "15.7",
+  "attributes": {
+   "unit_of_measurement": "kWh"
+  }
+ },
+ "sensor.inverter_today_energy_export": {
+  "state": "22.24",
+  "attributes": {
+   "unit_of_measurement": "kWh"
+  }
+ },
+ "sensor.inverter_output_l1_power": {
+  "state": "2371.3",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_output_l1_voltage": {
+  "state": "-2487.7",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_grid_frequency": {
+  "state": "3065.8",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_temperature": {
+  "state": "1728.8",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_dc_temperature": {
+  "state": "-589.9",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "sensor.inverter_device_state": {
+  "state": "Normal",
+  "attributes": {}
+ },
+ "select.inverter_time_of_use": {
+  "state": "Normal",
+  "attributes": {}
+ },
+ "select.inverter_energy_pattern": {
+  "state": "Normal",
+  "attributes": {}
+ },
+ "sensor.evse_charging_power": {
+  "state": "-2751.9",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ },
+ "binary_sensor.evse_connection": {
+  "state": "on",
+  "attributes": {}
+ },
+ "sensor.evse_today_ev_charge": {
+  "state": "25.97",
+  "attributes": {
+   "unit_of_measurement": "kWh"
+  }
+ },
+ "sensor.inverter_today_load_consumption": {
+  "state": "14.18",
+  "attributes": {
+   "unit_of_measurement": "kWh"
+  }
+ },
+ "number.evse_charging_power_limit": {
+  "state": "2750.6",
+  "attributes": {
+   "unit_of_measurement": "W"
+  }
+ }
+}
