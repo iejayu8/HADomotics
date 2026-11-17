@@ -234,6 +234,8 @@
   transform-origin: top left;
 }
 #appSeguridad .sec-canvas[hidden] { display: none; }
+/* Cambiando de planta: el plano anterior no se queda a la vista. */
+#appSeguridad .sec-canvas.sec-loading { visibility: hidden; }
 #appSeguridad #secFloorImage { display: block; max-width: none; pointer-events: none; }
 
 /* Marcadores de presencia (contraescalados para seguir legibles) */

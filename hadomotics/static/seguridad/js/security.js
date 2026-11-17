@@ -237,28 +237,48 @@
     });
   }
 
+  // Cada cambio de planta tiene su número. Una respuesta o una imagen de un
+  // cambio anterior que llega tarde ya no toca el plano (antes podía dejar
+  // la imagen de otra planta con el botón y los sensores de la nueva).
+  let floorSeq = 0;
+
   async function selectFloor(id) {
+    const seq = ++floorSeq;
     currentFloorId = id;
     renderFloorSwitcher();
-    let floor = floorDetails[id];
-    if (!floor) {
-      const r = await fetch(root() + "/api/floors/" + encodeURIComponent(id), { cache: "no-store" });
-      floor = r.ok ? await r.json() : null;
-      if (floor) floorDetails[id] = floor;
-    }
     const img = $("secFloorImage");
     const canvas = $("secCanvas");
+    // Mientras llega el plano nuevo no se deja a la vista el anterior.
+    canvas.classList.add("sec-loading");
+    $("secEmpty").hidden = false;
+    $("secEmpty").textContent = "Cargando plano…";
+    let floor = floorDetails[id];
+    if (!floor) {
+      try {
+        const r = await fetch(root() + "/api/floors/" + encodeURIComponent(id), { cache: "no-store" });
+        floor = r.ok ? await r.json() : null;
+      } catch (e) {
+        floor = null;
+      }
+      if (floor) floorDetails[id] = floor;
+    }
+    if (seq !== floorSeq) return; // el usuario ya eligió otra planta
     if (!floor || !floor.image) {
       canvas.hidden = true;
+      canvas.classList.remove("sec-loading");
       $("secEmpty").hidden = false;
-      $("secEmpty").textContent = "Esta planta no tiene imagen.";
+      $("secEmpty").textContent = floor ? "Esta planta no tiene imagen." : "No se pudo cargar la planta.";
       return;
     }
     delete img.dataset.baseWidth;
     delete img.dataset.baseHeight;
     delete img.dataset.hdApplied;
-    const originalSrc = `${root()}/api/images/${floor.image}?t=${Date.now()}`;
+    // El nombre del fichero cambia con cada imagen subida (uuid), así que la
+    // URL ya es única: sin «?t=» el navegador puede reutilizar la imagen y no
+    // la vuelve a descargar entera en cada cambio de planta.
+    const originalSrc = `${root()}/api/images/${floor.image}`;
     img.onerror = () => {
+      if (seq !== floorSeq) return;
       if (img.dataset.hdApplied === "1") {
         delete img.dataset.baseWidth;
         delete img.dataset.baseHeight;
@@ -267,10 +287,11 @@
       }
     };
     img.onload = () => {
-      if (currentFloorId !== id) return;
+      if (seq !== floorSeq) return;
       if (window.HADomoticsPlan && window.HADomoticsPlan.maybeUseHd(img, floor, floors)) return;
       $("secEmpty").hidden = true;
       canvas.hidden = false;
+      canvas.classList.remove("sec-loading");
       const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
       const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
       img.style.width = w + "px";
@@ -283,6 +304,8 @@
     };
     img.src = originalSrc;
   }
+
+  function floorSeqValue() { return floorSeq; }
 
   /** Recorte de bordes blancos de la planta actual (mismo que Dispositivos). */
   function currentCrop() {
@@ -984,6 +1007,9 @@
     _setMap(m) { MAP = m; },
     _setStates(s) { states = s; },
     get pending() { return pending; },
+    selectFloor,
+    get floorSeq() { return floorSeqValue(); },
+    get currentFloorId() { return currentFloorId; },
     dropRecord,
     get editing() { return editing; },
     get started() { return started; },

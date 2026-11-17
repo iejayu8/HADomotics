@@ -398,3 +398,68 @@ test("sources: Sirena button next to Zonas/Detecciones, hidden by default, one p
   assert.equal(ons.length, 1);
   assert.ok(js.indexOf("confirmDlg(SIREN_TEST_TEXT") < js.indexOf('applyControl(e.siren, "turn_on"'));
 });
+
+// ---------------------------------------------------------------------------
+// 3.5.2 — cambio de planta: una respuesta antigua no pisa la planta elegida
+// ---------------------------------------------------------------------------
+
+function deferredFetch() {
+  const waiting = {};
+  const impl = (url) => new Promise((resolve) => { waiting[url] = resolve; });
+  const answer = (url, body) => waiting[url]({ ok: true, status: 200, json: async () => body });
+  return { impl, answer, waiting };
+}
+
+const tick = () => new Promise((r) => setImmediate(r));
+
+test("Seguridad floors: a late floor response never overwrites the floor picked last", async () => {
+  const net = deferredFetch();
+  const { sec, els } = loadWithDom(net.impl);
+  // Arranque: PlantaBaja tarda; el usuario pulsa Planta1 antes de que llegue.
+  const first = sec.selectFloor("pb");
+  assert.equal(els.secCanvas.classList.contains("sec-loading"), true); // no se deja el plano anterior
+  const second = sec.selectFloor("p1");
+  assert.equal(sec.currentFloorId, "p1");
+  net.answer("/api/floors/p1", { id: "p1", name: "Planta1", image: "p1.png", elements: [] });
+  await second;
+  assert.equal(els.secFloorImage.src, "/api/images/p1.png"); // sin «?t=»: reutilizable
+  const p1Load = els.secFloorImage.onload;
+  net.answer("/api/floors/pb", { id: "pb", name: "PlantaBaja", image: "pb.png", elements: [] });
+  await first;
+  await tick();
+  assert.equal(els.secFloorImage.src, "/api/images/p1.png"); // la respuesta tardía se descarta
+  assert.equal(els.secFloorImage.onload, p1Load);
+  assert.equal(els.secEmpty.textContent, "Cargando plano…");
+});
+
+test("Seguridad floors: a late image load of the previous floor is ignored", async () => {
+  const net = deferredFetch();
+  const { sec, els } = loadWithDom(net.impl);
+  const a = sec.selectFloor("p1");
+  net.answer("/api/floors/p1", { id: "p1", name: "Planta1", image: "p1.png", elements: [] });
+  await a;
+  const staleLoad = els.secFloorImage.onload;
+  const staleError = els.secFloorImage.onerror;
+  const b = sec.selectFloor("pb");
+  net.answer("/api/floors/pb", { id: "pb", name: "PlantaBaja", image: "pb.png", elements: [] });
+  await b;
+  els.secFloorImage.dataset.hdApplied = "1";
+  staleError(); // un error tardío de Planta1 no cambia la imagen de PlantaBaja
+  assert.equal(els.secFloorImage.src, "/api/images/pb.png");
+  staleLoad(); // ni su carga tardía la muestra
+  assert.equal(els.secCanvas.classList.contains("sec-loading"), true);
+});
+
+test("Dispositivos floors: stale responses are dropped and the last click always counts", () => {
+  const app = fs.readFileSync(path.join(STATIC, "js", "app.js"), "utf8");
+  const sel = app.slice(app.indexOf("async function selectFloor"), app.indexOf("function confirmDeleteFloor"));
+  assert.match(sel, /const seq = \+\+floorSelectSeq;/);
+  assert.match(sel, /requestedFloorId = floorId;/);
+  assert.ok(sel.indexOf("if (seq !== floorSelectSeq) return;") < sel.indexOf("currentFloor = floor;"));
+  assert.match(app, /const target = requestedFloorId \|\| \(currentFloor && currentFloor\.id\);/);
+  const canvas = app.slice(app.indexOf("function renderFloorCanvas"), app.indexOf("function _getElementStateText"));
+  assert.doesNotMatch(canvas, /\?t=\$\{Date\.now\(\)\}/);
+  assert.match(canvas, /img\.onload = \(\) => \{\s*if \(!currentFloor \|\| currentFloor\.id !== floorId\) return;/);
+  const secJs = fs.readFileSync(path.join(STATIC, "seguridad", "js", "security.js"), "utf8");
+  assert.doesNotMatch(secJs, /api\/images\/\$\{floor\.image\}\?t=/);
+});
