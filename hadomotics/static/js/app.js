@@ -21,6 +21,8 @@ window.HADomotics.panelRoot = panelRoot;
 // ---------------------------------------------------------------------------
 let floors = [];
 let currentFloor = null;
+let floorSelectSeq = 0;      // número del último cambio de planta pedido
+let requestedFloorId = null; // planta pedida la última (aunque aún no haya llegado)
 let currentElement = null;
 let pendingPlacement = false;
 let dragState = null;
@@ -300,7 +302,11 @@ function renderFloorSwitcher() {
     btn.textContent = f.name;
     btn.title = `Ir a ${f.name}`;
     btn.addEventListener("click", () => {
-      if (!currentFloor || currentFloor.id !== f.id) {
+      // Se compara con la última planta pedida, no con la que ya está
+      // cargada: si no, volver a la planta anterior mientras la otra aún
+      // carga no hacía nada y acababa apareciendo la otra.
+      const target = requestedFloorId || (currentFloor && currentFloor.id);
+      if (target !== f.id) {
         selectFloor(f.id);
       }
     });
@@ -364,8 +370,12 @@ function renderFloorCanvas(floor) {
     delete img.dataset.baseWidth;
     delete img.dataset.baseHeight;
     delete img.dataset.hdApplied;
-    const originalSrc = `${API}/api/images/${floor.image}?t=${Date.now()}`;
+    // La URL ya es única por imagen (nombre uuid): sin «?t=» el navegador la
+    // reutiliza en vez de descargarla entera en cada cambio de planta.
+    const originalSrc = `${API}/api/images/${floor.image}`;
+    const floorId = floor.id;
     img.onerror = () => {
+      if (!currentFloor || currentFloor.id !== floorId) return;
       // Si la versión HD no carga, volver a la imagen original.
       if (img.dataset.hdApplied === "1") {
         delete img.dataset.baseWidth;
@@ -376,6 +386,7 @@ function renderFloorCanvas(floor) {
     };
     img.src = originalSrc;
     img.onload = () => {
+      if (!currentFloor || currentFloor.id !== floorId) return;
       // Planta con versión HD de la misma imagen: se carga conservando las
       // medidas originales como coordenadas de los elementos.
       if (window.HADomoticsPlan && window.HADomoticsPlan.maybeUseHd(img, floor, floors)) return;
@@ -900,9 +911,16 @@ function setViewMode(enabled) {
 // Otras funciones
 // ---------------------------------------------------------------------------
 
+// Cada cambio de planta tiene su número: si el usuario cambia otra vez antes
+// de que llegue la respuesta, la respuesta antigua se descarta (antes la que
+// llegaba la última ganaba, aunque no fuera la planta pulsada la última).
 async function selectFloor(floorId) {
+  const seq = ++floorSelectSeq;
+  requestedFloorId = floorId;
   try {
-    currentFloor = await apiFetch(`/api/floors/${floorId}`);
+    const floor = await apiFetch(`/api/floors/${floorId}`);
+    if (seq !== floorSelectSeq) return;
+    currentFloor = floor;
     currentElement = null;
     document.querySelectorAll("#floorList li").forEach((li) => {
       li.classList.toggle("active", li.dataset.id === floorId);
@@ -915,6 +933,8 @@ async function selectFloor(floorId) {
     renderFloorSwitcher();
     setTimeout(fitFloorPlan, 50);
   } catch (err) {
+    if (seq !== floorSelectSeq) return;
+    requestedFloorId = currentFloor ? currentFloor.id : null; // se puede volver a pulsar
     toast(`Error loading floor: ${err.message}`, "error");
   }
 }

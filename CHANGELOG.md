@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.5.2
+
+### Fixed
+- **Seguridad: al cambiar a Planta 1 a veces no aparecía su plano**, o salía tarde.
+  - Si la respuesta o la imagen de la planta anterior llegaba después de la nueva, dejaba en pantalla el plano equivocado: por ejemplo, Planta 1 marcada y con sus sensores, pero con el dibujo de la planta baja. Pasaba sobre todo al entrar en Seguridad, mientras aún cargaba la planta baja, o al cambiar de planta rápido.
+  - Ahora cada cambio de planta tiene su número, y lo que llega de un cambio anterior se descarta.
+  - Mientras carga el plano nuevo se muestra «Cargando plano…» en vez del plano anterior.
+- **Dispositivos:** volver a la planta anterior mientras la otra aún cargaba no hacía nada y acababa apareciendo la otra. Ahora cuenta siempre la última planta pulsada, y una respuesta antigua no la pisa.
+- **Imágenes de los planos:** ya no llevan `?t=<hora>`. El nombre del fichero ya es único por imagen subida, así que el navegador puede reutilizarla en vez de descargarla entera en cada cambio de planta, que era parte del retraso.
+
 ## 3.5.1
 
 ### Added
