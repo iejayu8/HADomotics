@@ -1,4 +1,4 @@
-# HADomotics para Android (sin Home Assistant) · v0.1.0 (vista previa)
+# HADomotics para Android (sin Home Assistant) · v0.1.1 (vista previa)
 
 App Android que da **la misma experiencia que el add-on HADomotics 3.5.1** —planos con
 elementos, Seguridad con alarma y Energía— a quien **no tiene Home Assistant**: habla
@@ -26,8 +26,8 @@ nueva intercepta las llamadas `/api/...` y las resuelve dentro del móvil (ver
 
 ## Instalación
 
-1. Descarga `HADomotics-android-0.1.0.apk` de la pre-release
-   [`android-v0.1.0`](https://github.com/iejayu8/HADomotics/releases/tag/android-v0.1.0)
+1. Descarga `HADomotics-android-0.1.1.apk` de la pre-release
+   [`android-v0.1.1`](https://github.com/iejayu8/HADomotics/releases/tag/android-v0.1.1)
    (o compílalo, ver abajo).
 2. En el móvil: abre el APK y permite «Instalar apps desconocidas» para el navegador o el gestor de archivos.
 3. Android 8.0 o superior (minSdk 26). Probado en compilación con targetSdk 34.
@@ -139,6 +139,14 @@ APK firmado (release): crea un `keystore.properties` **fuera del repositorio** c
 
 Ver el código sin móvil: `npm run build:web` y sirve `www/` (p. ej. `python3 -m http.server`);
 en el navegador solo funciona el modo demo (Tuya no admite CORS).
+
+## Cambios
+
+- **0.1.1** (17/11/2026): en Dispositivos, modo edición, los elementos ya se arrastran y
+  redimensionan con el dedo (tablets/móviles). Antes solo respondían al ratón. También se corrige
+  que un segundo arrastre seguido del mismo elemento saltara a su posición anterior. Es una
+  actualización directa sobre la 0.1.0 (misma firma).
+- **0.1.0** (17/11/2026): primera vista previa.
 
 ## Hoja de ruta
 
