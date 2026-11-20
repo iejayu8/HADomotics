@@ -37,6 +37,20 @@
     background: { enabled: false, pulsar: false, poll_s: 180 },
   };
 
+  /** Módulos de la app. Falta (instalación de 0.1.1 o anterior) = activo; todos apagados = todos activos. */
+  const MODULE_KEYS = ["dispositivos", "energia", "seguridad"];
+  function normalizeModules(raw) {
+    const src = raw && typeof raw === "object" ? raw : {};
+    const out = {};
+    MODULE_KEYS.forEach((k) => { out[k] = src[k] === undefined || src[k] === null ? true : !!src[k]; });
+    if (!MODULE_KEYS.some((k) => out[k])) MODULE_KEYS.forEach((k) => { out[k] = true; });
+    return out;
+  }
+  /** Lo que llega del asistente o de Ajustes: los tres valores y al menos uno activo. */
+  function validModules(m) {
+    return !!m && typeof m === "object" && MODULE_KEYS.every((k) => typeof m[k] === "boolean") && MODULE_KEYS.some((k) => m[k]);
+  }
+
   function deepMerge(a, b) {
     const out = Array.isArray(a) ? a.slice() : Object.assign({}, a);
     Object.keys(b || {}).forEach((k) => {
@@ -101,7 +115,15 @@
       return this;
     }
 
+    modules() { return normalizeModules(this.settings.modules); }
+    moduleOn(k) { return this.modules()[k]; }
+
     async saveSettings(patch) {
+      if (patch && patch.modules !== undefined && !validModules(patch.modules)) throw new Error("Elige al menos un módulo");
+      // Apagar Seguridad no puede servir para saltarse el código: primero hay que desarmar.
+      if (patch && patch.modules && !patch.modules.seguridad && this.moduleOn("seguridad") && this.alarm.s.state !== "disarmed") {
+        throw new Error("Desarma la alarma antes de desactivar Seguridad");
+      }
       this.settings = deepMerge(this.settings, patch || {});
       if (patch && patch.alarm && Array.isArray(patch.alarm.zones)) this.settings.alarm.zones = patch.alarm.zones;
       if (patch && patch.energy && Array.isArray(patch.energy.controls)) this.settings.energy.controls = patch.energy.controls;
@@ -224,18 +246,24 @@
         mapper.mapDevice(Object.assign({}, dev, { spec: this.specs[dev.id] }), this.registry, now).forEach((e) => { next[e.entity_id] = e; });
       });
       this.scenes.forEach((s) => { const e = mapper.mapScene(s, s.home_id, this.registry, now); next[e.entity_id] = e; });
-      // Sensores de seguridad -> motor de alarma (detección por cambio de estado)
+      const mods = this.modules();
+      // Sensores de seguridad -> motor de alarma (detección por cambio de estado).
+      // Con Seguridad desactivada el motor no recibe nada ni publica sus entidades.
       const alarmActions = [];
-      Object.values(next).forEach((e) => {
-        if (!/^binary_sensor\./.test(e.entity_id)) return;
-        const prev = this.states[e.entity_id];
-        if (!prev || prev.state !== e.state) alarmActions.push(...this.alarm.onSensor(e.entity_id, e.state, now, e.attributes.friendly_name));
-      });
-      alarmActions.push(...this.alarm.tick(now));
-      this.alarm.entities(now).forEach((e) => { next[e.entity_id] = e; });
-      // Energía: sensor virtual «Casa» si no hay inversor
-      const emap = energy.buildEnergyMap(this.settings, next);
-      if (emap.flow.entities.inverter_power === "sensor.hd_consumo_casa") { const v = energy.virtualHouse(next, emap); next[v.entity_id] = v; }
+      if (mods.seguridad) {
+        Object.values(next).forEach((e) => {
+          if (!/^binary_sensor\./.test(e.entity_id)) return;
+          const prev = this.states[e.entity_id];
+          if (!prev || prev.state !== e.state) alarmActions.push(...this.alarm.onSensor(e.entity_id, e.state, now, e.attributes.friendly_name));
+        });
+        alarmActions.push(...this.alarm.tick(now));
+        this.alarm.entities(now).forEach((e) => { next[e.entity_id] = e; });
+      }
+      // Energía: sensor virtual «Casa» si no hay inversor (solo con Energía activa)
+      if (mods.energia) {
+        const emap = energy.buildEnergyMap(this.settings, next);
+        if (emap.flow.entities.inverter_power === "sensor.hd_consumo_casa") { const v = energy.virtualHouse(next, emap); next[v.entity_id] = v; }
+      }
       // conservar last_changed si el estado no cambió; emitir cambios
       const changed = [];
       Object.values(next).forEach((e) => {
@@ -250,6 +278,7 @@
     }
 
     tick() {
+      if (!this.moduleOn("seguridad")) return; // sin Seguridad no hay motor de alarma
       const acts = this.alarm.tick(this.now());
       if (acts.length) { this._runAlarmActions(acts); this.rebuild(); }
       else {
@@ -259,6 +288,7 @@
     }
 
     async _runAlarmActions(actions) {
+      if (!this.moduleOn("seguridad")) return;
       let dirty = false;
       for (const a of actions) {
         if (a.type === "changed") dirty = true;
@@ -292,6 +322,7 @@
       const ids = [].concat((data && data.entity_id) || []);
       if (!ids.length) throw new Error("entity_id requerido");
       for (const id of ids) {
+        if (!this.moduleOn("seguridad") && (domain === "alarm_control_panel" || /^input_boolean\.hd_zona_/.test(id) || id === alarmMod.SIREN_ENABLE)) throw new Error("El módulo Seguridad está desactivado");
         if (domain === "alarm_control_panel") {
           if (id !== alarmMod.ALARM_ENTITY) throw new Error("entidad de alarma desconocida");
           await this._runAlarmActions(this.alarm.command(service, now, user || "app"));
@@ -389,7 +420,7 @@
 
     status() {
       return {
-        mode: this.settings.mode, onboarded: !!this.settings.onboarded, connected: this.connected, last_error: this.lastError,
+        mode: this.settings.mode, onboarded: !!this.settings.onboarded, modules: this.modules(), modules_chosen: validModules(this.settings.modules), connected: this.connected, last_error: this.lastError,
         devices: Object.keys(this.devices).length, entities: Object.keys(this.states).length, budget: this.budget,
         budget_month: this.settings.poll.budget_month, next_poll_s: this.nextPollSeconds(), last_poll: this.lastPoll,
         secure_storage: !!(this.d.secure && this.d.secure.available), native: !!this.d.native,
@@ -401,17 +432,20 @@
     async syncNative() {
       if (!this.d.native) return;
       const sensors = [];
+      const security = this.moduleOn("seguridad");
       const snap = this.alarm.nativeSnapshot();
-      snap.zones.forEach((z) => z.sensors.forEach((eid) => {
+      if (security) snap.zones.forEach((z) => z.sensors.forEach((eid) => {
         const s = this.states[eid];
         const t = s && s.attributes.tuya;
         if (t && t.device_id) sensors.push({ entity_id: eid, device_id: t.device_id, code: t.code, zone: z.id, label: s.attributes.friendly_name, category: t.category });
       }));
       const siren = this.settings.alarm.siren && this.states[this.settings.alarm.siren.entity];
       const payload = {
-        mode: this.settings.mode, region: this.settings.tuya.region, background: this.settings.background,
+        // Seguridad desactivada: el servicio en segundo plano no arranca (background.enabled = false).
+        mode: this.settings.mode, region: this.settings.tuya.region,
+        background: security ? this.settings.background : Object.assign({}, this.settings.background, { enabled: false, pulsar: false }),
         alarm: snap, sensors,
-        siren: siren && siren.attributes.tuya ? { device_id: siren.attributes.tuya.device_id, code: siren.attributes.tuya.code } : null,
+        siren: security && siren && siren.attributes.tuya ? { device_id: siren.attributes.tuya.device_id, code: siren.attributes.tuya.code } : null,
         device_ids: Object.keys(this.devices),
       };
       try { await this.d.native.configure({ json: JSON.stringify(payload) }); } catch (e) { this.log("native: " + e.message); }
@@ -438,7 +472,7 @@
 
   function num(v, d) { const n = Number(v); return Number.isFinite(n) ? n : d; }
 
-  const api = { Hub, DEFAULT_SETTINGS, pollInterval, deepMerge, monthKey };
+  const api = { Hub, DEFAULT_SETTINGS, pollInterval, deepMerge, monthKey, normalizeModules, validModules, MODULE_KEYS };
   HDX.define("hub", () => api);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

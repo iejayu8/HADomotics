@@ -41,7 +41,19 @@
   sheet.innerHTML = `<div class="hdx-panel" role="dialog" aria-label="Ajustes de la app">
     <div class="hdx-head"><span class="material-icons">settings</span><h2>Ajustes de la app</h2><button class="hdx-x" aria-label="Cerrar">×</button></div>
     <nav class="hdx-tabs"></nav><div class="hdx-body"></div></div>`;
-  const TABS = [["estado", "Estado"], ["tuya", "Tuya"], ["dispositivos", "Dispositivos"], ["alarma", "Alarma"], ["energia", "Energía"], ["cargador", "Cargador VE"], ["fondo", "Segundo plano"], ["copia", "Copia"], ["ayuda", "Ayuda"]];
+  const TABS = [["estado", "Estado"], ["modulos", "Módulos"], ["tuya", "Tuya"], ["dispositivos", "Dispositivos"], ["alarma", "Alarma"], ["energia", "Energía"], ["cargador", "Cargador VE"], ["fondo", "Segundo plano"], ["copia", "Copia"], ["ayuda", "Ayuda"]];
+  // Pestañas de ajustes que pertenecen a un módulo: si está desactivado, no aparecen.
+  const TAB_MODULE = { dispositivos: "dispositivos", cargador: "dispositivos", alarma: "seguridad", fondo: "seguridad", energia: "energia" };
+  const MODULES = [
+    ["dispositivos", "devices", "Dispositivos", "Planos con luces, enchufes, persianas, escenas… y el coche/cargador en el plano."],
+    ["energia", "bolt", "Energía", "Red, solar, batería y consumo, con el diagrama de flujo."],
+    ["seguridad", "shield", "Seguridad", "Alarma propia (Noche / Ausente), zonas, sirena, avisos y sensores en los planos."],
+  ];
+  const mods = () => (status && status.modules) || (window.HDModules && window.HDModules.current) || { dispositivos: true, energia: true, seguridad: true };
+  const tabVisible = (k) => !TAB_MODULE[k] || mods()[TAB_MODULE[k]];
+  const moduleChecks = (sel, prefix) => `<div class="hdx-mods">${MODULES.map(([k, icon, label, desc]) => `<label class="hdx-mod ${sel[k] ? "on" : ""}"><input type="checkbox" data-mod="${k}" id="${prefix}${k}" ${sel[k] ? "checked" : ""}><span class="material-icons">${icon}</span><span><b>${label}</b><small>${desc}</small></span></label>`).join("")}</div>`;
+  const readModules = (root) => { const m = {}; MODULES.forEach(([k]) => { const c = root.querySelector(`input[data-mod="${k}"]`); m[k] = !!(c && c.checked); }); return m; };
+  const anyModule = (m) => MODULES.some(([k]) => m[k]);
   let tab = "estado";
   sheet.addEventListener("click", (e) => { if (e.target === sheet || e.target.closest(".hdx-x")) close(); });
 
@@ -54,7 +66,8 @@
 
   async function render() {
     try { await refreshData(); } catch (e) { toast(e.message, "error"); }
-    $(".hdx-tabs", sheet).innerHTML = TABS.map(([k, l]) => `<button data-t="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("");
+    if (!tabVisible(tab)) tab = "estado";
+    $(".hdx-tabs", sheet).innerHTML = TABS.filter(([k]) => tabVisible(k)).map(([k, l]) => `<button data-t="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("");
     $(".hdx-tabs", sheet).onclick = (e) => { const b = e.target.closest("button[data-t]"); if (b) { tab = b.dataset.t; render(); } };
     const body = $(".hdx-body", sheet);
     body.innerHTML = VIEWS[tab]();
@@ -78,14 +91,20 @@
         <div class="hdx-stat"><b>${s.devices || 0}</b><span>dispositivos · ${s.entities || 0} entidades</span></div>
         <div class="hdx-stat"><b>${used} / ${esc(s.budget_month)}</b><span>llamadas a la API este mes</span></div>
         <div class="hdx-stat"><b>${Number.isFinite(s.next_poll_s) ? s.next_poll_s + " s" : "pausado"}</b><span>sondeo (según cuota)</span></div>
-        <div class="hdx-stat"><b>${esc(s.alarm)}</b><span>alarma</span></div>
+        ${mods().seguridad ? `<div class="hdx-stat"><b>${esc(s.alarm)}</b><span>alarma</span></div>` : ""}
       </div>
       ${s.last_error ? `<div class="hdx-note">Último error: ${esc(s.last_error)}</div>` : ""}
       ${s.secure_storage ? `<div class="hdx-note hdx-ok">Claves guardadas en el almacén seguro del sistema (Android Keystore).</div>` : `<div class="hdx-note">Sin almacén seguro nativo (navegador): las claves solo se guardarían en memoria. Usa la app Android.</div>`}
       <div class="hdx-actions"><button class="hdx-btn primary" data-a="poll"><span class="material-icons">sync</span>Actualizar ahora</button>
       <button class="hdx-btn" data-a="discover"><span class="material-icons">travel_explore</span>Buscar dispositivos</button>
       <button class="hdx-btn" data-a="wizard"><span class="material-icons">school</span>Asistente</button></div>
-      <h3>Registro de la alarma</h3><p>${(s.alarm_log || []).slice().reverse().map((l) => `${esc(new Date(l.t).toLocaleString("es-ES", { timeZone: "Europe/Madrid" }))} — ${esc(l.text)}`).join("<br>") || "Sin eventos."}</p>`;
+      ${mods().seguridad ? `<h3>Registro de la alarma</h3><p>${(s.alarm_log || []).slice().reverse().map((l) => `${esc(new Date(l.t).toLocaleString("es-ES", { timeZone: "Europe/Madrid" }))} — ${esc(l.text)}`).join("<br>") || "Sin eventos."}</p>` : ""}`;
+    },
+    modulos() {
+      return `<p>Elige qué partes de la app usas. Lo que desactives desaparece del todo (pestaña, botón y ajustes) y no trabaja en segundo plano: sin <b>Seguridad</b> no corre el motor de alarma ni la vigilancia con la app cerrada; sin <b>Energía</b> no se calcula ni se sondea su flujo.</p>
+      ${moduleChecks(mods(), "hdxMod_")}
+      <div class="hdx-note">Deja al menos uno activo. Con uno solo, la app abre directamente esa vista.${mods().seguridad ? " Para desactivar Seguridad, la alarma tiene que estar desarmada." : ""}</div>
+      <div class="hdx-actions"><button class="hdx-btn primary" data-a="savemodules">Guardar módulos</button></div>`;
     },
     tuya() {
       const t = (settings && settings.tuya) || {};
@@ -207,6 +226,15 @@
 
   const BIND = {
     estado(body) { body.onclick = actions; },
+    modulos(body) {
+      body.onclick = actions;
+      body.onchange = (e) => {
+        const c = e.target.closest(".hdx-mod");
+        if (c) c.classList.toggle("on", e.target.checked);
+        const btn = $("[data-a=savemodules]", body);
+        if (btn) btn.disabled = !anyModule(readModules(body));
+      };
+    },
     tuya(body) { body.onclick = actions; },
     async dispositivos(body) {
       body.onclick = actions;
@@ -243,6 +271,12 @@
     try {
       switch (b.dataset.a) {
         case "poll": await api("POST", "/api/standalone/poll"); toast("Actualizado"); break;
+        case "savemodules": {
+          const m = readModules(body);
+          if (!anyModule(m)) { toast("Elige al menos un módulo", "error"); return; }
+          await save({ modules: m }, true);
+          return;
+        }
         case "discover": { const r = await api("POST", "/api/standalone/discover"); toast(`${r.devices.length} dispositivos`); break; }
         case "wizard": close(); wizard.open(0); return;
         case "savekeys": {
@@ -318,31 +352,48 @@
     el.className = "hdx-sheet hdx-wizard";
     el.hidden = true;
     let step = 0;
+    // Módulos elegidos en el asistente. La primera vez no hay nada marcado: elige el usuario.
+    let pick = { dispositivos: false, energia: false, seguridad: false };
+    const finalStep = () => {
+      const li = [];
+      if (pick.dispositivos) li.push(`<li>Pestaña <b>Dispositivos</b> → lápiz → <b>sube la imagen del plano</b> de cada planta y pulsa «+» para colocar luces, enchufes, persianas, escenas… También fuera del dibujo.</li>`);
+      if (pick.seguridad) {
+        li.push(`<li><b>Seguridad</b>: los sensores de movimiento y puertas aparecen solos; colócalos con el lápiz.${pick.dispositivos ? "" : " Usa los planos que ya tengas (se suben en Dispositivos)."}</li>`);
+        li.push(`<li><b>Ajustes → Alarma</b>: «Proponer zonas», marca cuáles se activan de <b>Noche</b>, elige la sirena y, si quieres, un código.</li>`);
+        li.push(`<li><b>Ajustes → Segundo plano</b>: activa la vigilancia con la app cerrada.</li>`);
+      }
+      if (pick.energia) li.push(`<li><b>Ajustes → Energía</b>: elige qué sensor es la red, la solar y la batería.</li>`);
+      li.push(`<li>Puedes cambiar los módulos cuando quieras en <b>Ajustes → Módulos</b>.</li>`);
+      return `<h3>Últimos pasos</h3><ol>${li.join("")}</ol>`;
+    };
     const STEPS = [
-      () => `<div class="hdx-hero material-icons">home</div><h2>HADomotics sin Home Assistant</h2>
+      { id: "intro", html: () => `<div class="hdx-hero material-icons">home</div><h2>HADomotics sin Home Assistant</h2>
         <p>Controla tus dispositivos <b>Tuya</b> (WiFi y Zigbee con pasarela Tuya) sobre el plano de tu casa, con alarma propia (Noche / Ausente, zonas, sirena y avisos) y vista de energía. Todo desde este móvil: no necesitas servidor.</p>
-        <div class="hdx-note">Probado con dispositivos simulados. Aún no se ha probado con dispositivos Tuya reales.</div>`,
-      () => GUIDE,
-      () => `<h3>Tus claves de Tuya</h3>
+        <div class="hdx-note">Probado con dispositivos simulados. Aún no se ha probado con dispositivos Tuya reales.</div>` },
+      { id: "modules", html: () => `<h3>¿Qué quieres usar?</h3>
+        <p>Marca los módulos que vas a usar (al menos uno). Lo que no marques no aparecerá en la app ni trabajará en segundo plano. Lo puedes cambiar después en Ajustes → Módulos.</p>
+        ${moduleChecks(pick, "wMod_")}` },
+      { id: "guide", html: () => GUIDE },
+      { id: "keys", html: () => `<h3>Tus claves de Tuya</h3>
         <label class="hdx-field">Centro de datos<select id="wRegion">${REGIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>
         <label class="hdx-field">Access ID<input id="wId" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
         <label class="hdx-field">Access Secret<input id="wSecret" type="password" autocomplete="off"></label>
         <p>Se guardan cifradas en el móvil (Android Keystore) y no se muestran nunca más.</p>
-        <div class="hdx-actions"><button class="hdx-btn primary" data-w="keys">Conectar</button><button class="hdx-btn" data-w="demo">Usar casa de demostración</button></div>`,
-      () => `<h3>Tus dispositivos</h3><p>Buscando en tu cuenta…</p><ul class="hdx-devlist" id="wDevs"></ul>`,
-      () => `<h3>Plano y alarma</h3><ol>
-        <li>Pestaña <b>Dispositivos</b> → lápiz → <b>sube la imagen del plano</b> de cada planta y pulsa «+» para colocar luces, enchufes, persianas, escenas… También fuera del dibujo.</li>
-        <li><b>Seguridad</b>: los sensores de movimiento y puertas aparecen solos; colócalos con el lápiz.</li>
-        <li><b>Ajustes → Alarma</b>: «Proponer zonas», marca cuáles se activan de <b>Noche</b>, elige la sirena y, si quieres, un código.</li>
-        <li><b>Ajustes → Segundo plano</b>: activa la vigilancia con la app cerrada.</li></ol>`,
+        <div class="hdx-actions"><button class="hdx-btn primary" data-w="keys">Conectar</button><button class="hdx-btn" data-w="demo">Usar casa de demostración</button></div>` },
+      { id: "devices", html: () => `<h3>Tus dispositivos</h3><p>Buscando en tu cuenta…</p><ul class="hdx-devlist" id="wDevs"></ul>` },
+      { id: "final", html: finalStep },
     ];
+    const cur = () => STEPS[step].id;
     function render() {
+      const last = step === STEPS.length - 1;
+      const blocked = cur() === "modules" && !anyModule(pick);
       el.innerHTML = `<div class="hdx-panel"><div class="hdx-head"><h2>Primeros pasos</h2><button class="hdx-x" aria-label="Cerrar">×</button></div>
         <div class="hdx-steps">${STEPS.map((_, i) => `<i class="${i <= step ? "on" : ""}"></i>`).join("")}</div>
-        <div class="hdx-body">${STEPS[step]()}</div>
+        <div class="hdx-body">${STEPS[step].html()}</div>
         <div class="hdx-body" style="padding-top:0"><div class="hdx-actions">${step > 0 ? `<button class="hdx-btn" data-w="back">Atrás</button>` : ""}
-        ${step === 2 ? "" : `<button class="hdx-btn primary" data-w="${step === STEPS.length - 1 ? "finish" : "next"}">${step === STEPS.length - 1 ? "Empezar" : "Siguiente"}</button>`}</div></div></div>`;
-      if (step === 3) loadDevs();
+        ${cur() === "keys" ? "" : `<button class="hdx-btn primary" data-w="${last ? "finish" : "next"}" ${blocked ? "disabled" : ""}>${last ? "Empezar" : "Siguiente"}</button>`}</div>
+        ${cur() === "modules" ? `<p class="hdx-hint" id="wModHint" ${blocked ? "" : "hidden"}>Elige al menos un módulo para continuar.</p>` : ""}</div></div>`;
+      if (cur() === "devices") loadDevs();
     }
     async function loadDevs() {
       try {
@@ -357,6 +408,11 @@
       if (!b) return;
       const w = b.dataset.w;
       try {
+        if (w === "next" && cur() === "modules") {
+          pick = readModules(el);
+          if (!anyModule(pick)) { toast("Elige al menos un módulo", "error"); render(); return; }
+          await api("PUT", "/api/standalone/settings", { modules: pick });
+        }
         if (w === "next") step++;
         if (w === "back") step--;
         if (w === "keys") {
@@ -369,7 +425,27 @@
         render();
       } catch (err) { toast(err.message, "error"); }
     });
-    return { el, open(s) { step = s || 0; el.hidden = false; render(); } };
+    el.addEventListener("change", (e) => {
+      if (!e.target.matches || !e.target.matches("input[data-mod]")) return;
+      pick = readModules(el);
+      const c = e.target.closest(".hdx-mod");
+      if (c) c.classList.toggle("on", e.target.checked);
+      const btn = $("[data-w=next]", el);
+      if (btn) btn.disabled = !anyModule(pick);
+      const hint = $("#wModHint", el);
+      if (hint) hint.hidden = anyModule(pick);
+    });
+    return {
+      el,
+      async open(s) {
+        step = s || 0;
+        // Primera vez: nada marcado. Si ya se eligieron (asistente abierto desde Ajustes), se muestran.
+        const st = await api("GET", "/api/standalone/status").catch(() => null);
+        pick = st && st.modules_chosen ? Object.assign({}, st.modules) : { dispositivos: false, energia: false, seguridad: false };
+        el.hidden = false;
+        render();
+      },
+    };
   })();
 
   // ------------------------------------------------------------ montaje

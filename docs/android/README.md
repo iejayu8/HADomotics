@@ -1,4 +1,4 @@
-# HADomotics para Android (sin Home Assistant) · v0.1.1 (vista previa)
+# HADomotics para Android (sin Home Assistant) · v0.1.2 (vista previa)
 
 App Android que da **la misma experiencia que el add-on HADomotics 3.5.1** —planos con
 elementos, Seguridad con alarma y Energía— a quien **no tiene Home Assistant**: habla
@@ -18,7 +18,7 @@ Zigbee de Tuya).
 | **Dispositivos** | Los mismos planos y editor del add-on: plantas, imagen del plano (la sube el usuario), botones, luces, sensores, persianas, elementos fuera del plano, colores. Coche y cable de carga animado (cargador Tuya `qccdz`). Escenas Tuya como botones. |
 | **Seguridad** | Panel de alarma Desarmar/Noche/Ausente con retardo de salida y de entrada, zonas (las «Noche» se activan en modo noche, todas en Ausente), detecciones en vivo sobre el plano, sirena Tuya (`sgbj`) con «Sirena con la alarma», código opcional, aviso por zona como mucho una vez por minuto, vigilancia de sensores sin conexión (5 min). Réplica de la lógica Node-RED/Alarmo auditada (`AUDITORIA_ALARMA_NODERED.md`). |
 | **Energía** | Misma vista de flujo y consumo. Se eligen los sensores (red, solar, batería, consumo destacado…). Sin inversor, «Casa» = red + solar + batería. Controles (enchufes) en la propia vista. |
-| **Ajustes** (nuevo) | Estado y cuota, claves Tuya, dispositivos, alarma, energía, cargador VE, segundo plano, copia de seguridad, ayuda. |
+| **Ajustes** (nuevo) | Módulos, estado y cuota, claves Tuya, dispositivos, alarma, energía, cargador VE, segundo plano, copia de seguridad, ayuda. |
 
 La interfaz es **exactamente la del add-on** (`hadomotics/static`, sin cambios): una capa
 nueva intercepta las llamadas `/api/...` y las resuelve dentro del móvil (ver
@@ -26,8 +26,8 @@ nueva intercepta las llamadas `/api/...` y las resuelve dentro del móvil (ver
 
 ## Instalación
 
-1. Descarga `HADomotics-android-0.1.1.apk` de la pre-release
-   [`android-v0.1.1`](https://github.com/iejayu8/HADomotics/releases/tag/android-v0.1.1)
+1. Descarga `HADomotics-android-0.1.2.apk` de la pre-release
+   [`android-v0.1.2`](https://github.com/iejayu8/HADomotics/releases/tag/android-v0.1.2)
    (o compílalo, ver abajo).
 2. En el móvil: abre el APK y permite «Instalar apps desconocidas» para el navegador o el gestor de archivos.
 3. Android 8.0 o superior (minSdk 26). Probado en compilación con targetSdk 34.
@@ -142,6 +142,14 @@ en el navegador solo funciona el modo demo (Tuya no admite CORS).
 
 ## Cambios
 
+- **0.1.2** (20/11/2026): **módulos configurables**. El asistente de primer arranque
+  pregunta qué usar (Dispositivos, Energía, Seguridad; nada marcado y al menos uno para
+  seguir) y se cambia en Ajustes → Módulos. Un módulo desactivado no aparece (ni pestaña,
+  ni botón, ni sus ajustes) ni trabaja en segundo plano: sin Seguridad no corre el motor de
+  alarma ni el servicio de vigilancia; sin Energía no se calcula ni se sondea su flujo. Con
+  un solo módulo, la barra inferior solo deja «Ajustes». Para desactivar Seguridad hay que
+  desarmar antes. Quien venga de 0.1.1 sigue con los tres activos. El modo demo respeta la
+  elección. Incluye el frontend del add-on 3.6.0 (PR #24).
 - **0.1.1** (17/11/2026): en Dispositivos, modo edición, los elementos ya se arrastran y
   redimensionan con el dedo (tablets/móviles). Antes solo respondían al ratón. También se corrige
   que un segundo arrastre seguido del mismo elemento saltara a su posición anterior. Es una

@@ -48,3 +48,16 @@
 .hdx-toast { position: fixed; left: 50%; bottom: calc(var(--nav-h, 64px) + 16px); transform: translateX(-50%); z-index: 9500; background: #111827; border: 1px solid var(--border, #22304a); color: #e5e7eb; padding: 10px 14px; border-radius: 10px; font-size: 13.5px; box-shadow: 0 6px 20px rgba(0,0,0,.4); max-width: 90vw; }
 .hdx-toast.error { border-color: #7f1d1d; }
 .hdx-demo-banner { position: fixed; left: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 74px); z-index: 4500; background: rgba(245, 158, 11, .18); color: #fcd34d; border: 1px solid rgba(245, 158, 11, .5); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 999px; pointer-events: none; }
+/* Módulos (asistente y Ajustes → Módulos) */
+.hdx-mods { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.hdx-mod { display: flex; align-items: center; gap: 12px; background: var(--surface-2, #1b2740); border: 1px solid var(--border, #22304a); border-radius: 12px; padding: 12px; cursor: pointer; }
+.hdx-mod.on { border-color: var(--primary, #38bdf8); box-shadow: inset 0 0 0 1px var(--primary, #38bdf8); }
+.hdx-mod input { width: 20px; height: 20px; margin: 0; accent-color: var(--primary, #38bdf8); flex: 0 0 auto; }
+.hdx-mod .material-icons { font-size: 26px; color: var(--primary-light, #7dd3fc); }
+.hdx-mod b { display: block; color: var(--text, #e5e7eb); font-size: 15px; }
+.hdx-mod small { display: block; color: var(--text-secondary, #94a3b8); font-size: 12.5px; line-height: 1.35; margin-top: 2px; }
+.hdx-hint { color: var(--warn, #f59e0b); font-size: 12.5px; margin: 8px 0 0; }
+.hdx-hint[hidden] { display: none; }
+/* Un solo módulo: la barra queda solo con «Ajustes» (en el add-on se oculta entera) */
+body.hd-single-module { --nav-h: 56px; }
+body.hd-single-module .app-nav { display: flex; }

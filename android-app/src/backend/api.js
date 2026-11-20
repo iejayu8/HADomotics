@@ -24,6 +24,14 @@
   }
   const J = (status, body) => ({ status, body });
 
+  /** Módulo dueño de una ruta: si está desactivado, 404 (igual que el add-on). */
+  function moduleForPath(path) {
+    if (path.startsWith("/api/energy/")) return "energia";
+    if (path.startsWith("/api/security/")) return "seguridad";
+    if (path === "/api/elements/colors" || /^\/api\/floors\/[^/]+\/elements(\/|$)/.test(path)) return "dispositivos";
+    return null;
+  }
+
   /** Casa demo completa: dos plantas con plano genérico, elementos colocados (dos escenas
    *  fuera del dibujo), zonas de alarma, sirena, energía y cargador. Solo si no hay planos. */
   async function seedDemoHome(store, hub, loadConfig, saveConfig, demoAssets) {
@@ -407,6 +415,7 @@
     });
 
     // ------------------------------------------------------------ propias de la app
+    on("GET", "/api/modules", async () => J(200, { modules: hub.modules() }));
     on("GET", "/api/standalone/status", async () => J(200, hub.status()));
     on("GET", "/api/standalone/settings", async () => {
       const s = JSON.parse(JSON.stringify(hub.settings));
@@ -416,6 +425,12 @@
     on("PUT", "/api/standalone/settings", async ({ body }) => {
       const patch = Object.assign({}, body || {});
       delete patch.mode; // el modo cambia con credenciales/demo
+      if (patch.modules !== undefined) {
+        const HUB = HDX.hub || require("./hub.js");
+        if (!HUB.validModules(patch.modules)) return J(400, { error: "Elige al menos un módulo" });
+        patch.modules = { dispositivos: patch.modules.dispositivos, energia: patch.modules.energia, seguridad: patch.modules.seguridad };
+        if (!patch.modules.seguridad && hub.moduleOn("seguridad") && hub.alarm.s.state !== "disarmed") return J(409, { error: "Desarma la alarma antes de desactivar Seguridad" });
+      }
       if (patch.alarm) {
         patch.alarm = Object.assign({}, patch.alarm);
         delete patch.alarm.has_code;
@@ -473,6 +488,8 @@
     async function handle(req) {
       const method = String(req.method || "GET").toUpperCase();
       const path = req.path.replace(/\/+$/, "") || "/";
+      const mod = moduleForPath(path);
+      if (mod && !hub.moduleOn(mod)) return J(404, { error: "Module disabled", module: mod });
       for (const r of routes) {
         if (r.method !== method) continue;
         const m = r.re.exec(path);
@@ -489,7 +506,7 @@
     return { handle, loadConfig, backup };
   }
 
-  const api = { createApi, DEFAULT_FLOORS };
+  const api = { createApi, DEFAULT_FLOORS, moduleForPath };
   HDX.define("api", () => api);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
