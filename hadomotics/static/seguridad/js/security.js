@@ -957,7 +957,13 @@
   }
 
   // ---------------------------------------------------------------- Start
+  function moduleOff() {
+    return !!(window.HDModules && !window.HDModules.isEnabled("seguridad"));
+  }
+
   async function start() {
+    // Seguridad desactivada en los módulos: ni mapa, ni sondeo de la alarma.
+    if (moduleOff()) return null;
     if (startPromise) return startPromise;
     startPromise = (async () => {
       bindPops();
@@ -988,7 +994,7 @@
   }
 
   window.HADomoticsSecurity = {
-    ensureStarted() { start().then(() => fit()); },
+    ensureStarted() { if (moduleOff()) return; start().then(() => fit()); },
     availableModes,
     needsCode,
     madridTime,

@@ -463,6 +463,10 @@
   }
 
   async function init() {
+    // Energía desactivada en los módulos: no se carga el mapa ni arranca ningún sondeo.
+    const mods = window.HDModules;
+    if (mods && mods.ready) await mods.ready;
+    if (mods && !mods.isEnabled("energia")) return;
     const root = (window.HADomotics && window.HADomotics.panelRoot) ? window.HADomotics.panelRoot() : "";
     const r = await fetch(root + "/api/energy/map", { cache: "no-store" });
     if (!r.ok) {
