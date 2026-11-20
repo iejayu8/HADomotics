@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.6.0
+
+### Added
+- **Módulos configurables: ves solo lo que usas.** En la configuración del add-on hay una opción nueva, «Módulos», con tres interruptores: **Dispositivos**, **Energía** y **Seguridad**. Vale cualquier combinación con al menos uno activo.
+  - Un módulo desactivado no aparece en absoluto: ni su pestaña, ni su botón en la barra de abajo, ni sus ajustes (por ejemplo, el ⚙ de Energía o la barra lateral de Dispositivos).
+  - Tampoco trabaja en segundo plano: con Energía apagada no arranca su sondeo de estados ni el del diagrama de flujo; con Seguridad apagada no se carga la alarma ni su sondeo; con Dispositivos apagado no se cargan sus planos ni el sondeo de los elementos.
+  - Con un solo módulo activo desaparece la barra de pestañas y se muestra directamente esa vista.
+  - El servidor responde **404** en las rutas de un módulo desactivado (`/energia` y `/api/energy/*`; `/seguridad` y `/api/security/*`; los elementos de Dispositivos, `/api/floors/<id>/elements*` y `/api/elements/colors`), así que tampoco se llega a Home Assistant desde ellas. Las plantas y sus imágenes siguen disponibles, porque Seguridad dibuja los mismos planos.
+  - Nuevo `GET /api/modules` (lectura de ingress, como el resto de lecturas del panel) con los módulos activos para el frontend.
+  - Los planos se suben y se ordenan en Dispositivos. Si lo desactivas, Seguridad usa las plantas que ya tengas; para subir o cambiar un plano, activa Dispositivos un momento.
+- Traducción al español de las opciones del add-on (`translations/es.yaml`).
+
+### Actualizar desde 3.5.x
+- No hay que hacer nada: si la opción «Módulos» no existe todavía o le falta algún módulo, ese módulo cuenta como activo, así que todo sigue como antes.
+- Si desactivas los tres, el add-on lo avisa en el registro y los activa todos, para no dejar el panel vacío.
+
 ## 3.5.2
 
 ### Fixed
