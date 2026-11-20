@@ -360,6 +360,15 @@ body.view-mode-active #backupSection {
   overflow: visible;
 }
 
+/* En edición el dedo arrastra el elemento: sin desplazar la página, zoom ni
+   menú de pulsación larga (WebView de Android, tablets). */
+.element-overlay:not(.view-mode),
+.element-overlay:not(.view-mode) .resize-handle {
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .element-overlay.view-mode {
   cursor: pointer;
   box-shadow: 0 2px 5px rgba(0,0,0,0.15);
@@ -971,4 +980,24 @@ body.view-mode-active .image-placeholder {
   border-radius: 2px;
   pointer-events: none;
   z-index: 1;
+}
+
+/* Módulos configurables: un módulo desactivado no aparece en absoluto */
+.app-nav button[hidden] {
+  display: none !important;
+}
+
+body.hd-mod-off-dispositivos #appDispositivos,
+body.hd-mod-off-energia #appEnergia,
+body.hd-mod-off-seguridad #appSeguridad {
+  display: none !important;
+}
+
+/* Un solo módulo activo: sin barra de pestañas, solo esa vista */
+body.hd-single-module {
+  --nav-h: 0px;
+}
+
+body.hd-single-module .app-nav {
+  display: none;
 }

@@ -1,6 +1,6 @@
 HADomotics is a project structured into multiple components, including a backend module, a custom Lovelace card, and a test suite. This repository contains the source code, configuration files, and development assets for the project.
 
-Latest addon version: 3.5.2
+Latest addon version: 3.6.0
 
 **Access**
 
@@ -9,6 +9,10 @@ The panel is part of Home Assistant (ingress). Host port **8099 is not published
 - **Sidebar:** open HADomotics in Home Assistant. Every logged-in user can load the panel. Only an administrator can edit floors or use the add-on's service proxy. Device taps use the signed-in user when the panel is embedded in Home Assistant.
 - **Lovelace card:** set `addon_url` to `/api/hassio_ingress/<token>` (copy the path from the sidebar panel). Administrators can leave it empty and the card will look the path up. Actions on the card go through Home Assistant (`hass.callService`), not the add-on proxy.
 - **Direct access (off by default):** in the add-on configuration enable **Allow direct access**, then on the Network page set a host port. Call the API with `Authorization: Bearer <long-lived access token>`. The token is checked with Home Assistant, and service calls run as that user. For a browser on another origin, set **CORS origins** to the exact origin (a wildcard is ignored).
+
+**Modules (3.6.0+)**
+
+In the add-on configuration, **Modules** has three switches: `dispositivos` (floor plans and devices), `energia` (Energy) and `seguridad` (Security/alarm). A disabled module is gone from the panel (no tab, no navigation button, no settings), does no background polling, and its API routes answer 404. With one module left the bottom tab bar is hidden. Missing options count as enabled, so existing installs keep all three; if all three are off the add-on logs a warning and enables them all. Floor plans are uploaded in Dispositivos; Seguridad reuses the existing floors when Dispositivos is off.
 
 Service calls through the add-on are limited to floor-plan controls (toggle, cover position, lights, scenes, scripts, and the other device services listed in `hadomotics/server.py`) plus the Energía helpers `input_number.set_value` and `input_select.select_option`. The Seguridad sub-app has its own admin-only endpoints. `POST /api/security/alarm` accepts only `alarm_control_panel.alarmo` and the arm/disarm modes Alarmo advertises. `POST /api/security/control` accepts only the alarm zones and siren entities listed below. `homeassistant.restart`, shell commands, and similar administrative services are rejected.
 

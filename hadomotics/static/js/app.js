@@ -491,26 +491,37 @@ function renderElements(elements) {
     `;
 
     if (!viewMode) {
-      div.addEventListener("mousedown", (e) => {
+      // Eventos de puntero (ratón, dedo y lápiz). Con solo «mouse*», en pantallas
+      // táctiles (tablet, WebView de Android) el navegador nunca envía mousemove
+      // mientras se arrastra con el dedo y el elemento no se movía.
+      div.addEventListener("pointerdown", (e) => {
         if (e.target.classList.contains("resize-handle")) return;
+        if (e.pointerType === "mouse" && e.button !== 0) return;
         e.preventDefault();
         dragState = {
+          pointerId: e.pointerId,
           elemId: el.id,
           startX: e.clientX,
           startY: e.clientY,
-          origX: pos.x,
-          origY: pos.y,
+          // Posición actual en pantalla (no la del último render): tras soltar
+          // el elemento no se vuelve a dibujar y «pos» quedaba desfasada, así
+          // que el segundo arrastre saltaba desde la posición antigua.
+          origX: Number.isFinite(parseFloat(div.style.left)) ? parseFloat(div.style.left) : pos.x,
+          origY: Number.isFinite(parseFloat(div.style.top)) ? parseFloat(div.style.top) : pos.y,
           moved: false,
         };
-        openElementProps(el);
+        // Las propiedades se abren al soltar: abrir el panel ahora reajusta el
+        // plano bajo el dedo y el elemento «salta» al empezar a arrastrar.
       });
 
       const resizeHandle = div.querySelector(".resize-handle");
       if (resizeHandle) {
-        resizeHandle.addEventListener("mousedown", (e) => {
+        resizeHandle.addEventListener("pointerdown", (e) => {
+          if (e.pointerType === "mouse" && e.button !== 0) return;
           e.preventDefault();
           e.stopPropagation();
           resizeState = {
+            pointerId: e.pointerId,
             elemId: el.id,
             startX: e.clientX,
             startY: e.clientY,
@@ -1033,7 +1044,15 @@ async function deleteElement(elemId) {
 // Drag / resize
 // ---------------------------------------------------------------------------
 
-document.addEventListener("mousemove", async (e) => {
+/** Solo el puntero que empezó el gesto (un segundo dedo no lo interrumpe). */
+function samePointer(state, e) {
+  return !!state && (state.pointerId == null || e.pointerId == null || state.pointerId === e.pointerId);
+}
+
+document.addEventListener("pointermove", async (e) => {
+  if (dragState && !samePointer(dragState, e)) return;
+  if (resizeState && !samePointer(resizeState, e)) return;
+  if (dragState || resizeState) e.preventDefault();
   if (dragState) {
     const dx = (e.clientX - dragState.startX) / floorScale;
     const dy = (e.clientY - dragState.startY) / floorScale;
@@ -1077,7 +1096,9 @@ document.addEventListener("mousemove", async (e) => {
   }
 });
 
-document.addEventListener("mouseup", async () => {
+async function endElementGesture(e) {
+  if (e && dragState && !samePointer(dragState, e)) return;
+  if (e && resizeState && !samePointer(resizeState, e)) return;
   if (dragState) {
     const st = dragState;
     dragState = null;
@@ -1090,6 +1111,7 @@ document.addEventListener("mouseup", async () => {
         body: JSON.stringify({ x: placed.x, y: placed.y, outside: placed.outside }),
       }).catch(() => {});
     }
+    if (el) openElementProps(el);
   }
   if (resizeState) {
     const el = currentFloor.elements.find((x) => x.id === resizeState.elemId);
@@ -1101,7 +1123,10 @@ document.addEventListener("mouseup", async () => {
     }
     resizeState = null;
   }
-});
+}
+document.addEventListener("pointerup", endElementGesture);
+// El sistema puede cancelar el gesto (p. ej. una notificación): se guarda lo movido.
+document.addEventListener("pointercancel", endElementGesture);
 
 /** Al soltar: queda dentro de la zona visible y se marca si está fuera del
  *  dibujo (fondo). Un elemento marcado «fuera» nunca se recoloca dentro. */
@@ -1154,14 +1179,24 @@ async function loadFloors() {
 // Event wiring
 // ---------------------------------------------------------------------------
 
-document.addEventListener("DOMContentLoaded", async () => {
-  if (window.HADomoticsPlan) await window.HADomoticsPlan.load();
-  await loadFloors();
-  setViewMode(true);
+// Módulos activos (HDModules, ver modules.js). Sin él, todo activo.
+function moduleEnabled(key) {
+  return !window.HDModules || window.HDModules.isEnabled(key);
+}
 
-  if (floors.length > 0) {
-    const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    await selectFloor(sorted[0].id);
+document.addEventListener("DOMContentLoaded", async () => {
+  if (window.HDModules && window.HDModules.ready) await window.HDModules.ready;
+  // Dispositivos desactivado: ni planos, ni sondeo de estados, ni gestos.
+  const devicesOn = moduleEnabled("dispositivos");
+  if (devicesOn) {
+    if (window.HADomoticsPlan) await window.HADomoticsPlan.load();
+    await loadFloors();
+    setViewMode(true);
+
+    if (floors.length > 0) {
+      const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      await selectFloor(sorted[0].id);
+    }
   }
 
   const duplicateBtn = $("btnDuplicateElement");
@@ -1343,7 +1378,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     showApp("dispositivos");
   }
 
-  installFloorSwipe();
+  if (devicesOn) installFloorSwipe();
 });
 
 const SUB_APPS = {
@@ -1354,6 +1389,10 @@ const SUB_APPS = {
 
 function showApp(which) {
   if (!SUB_APPS[which]) which = "dispositivos";
+  // Un módulo desactivado no se puede abrir: se va al primero activo.
+  if (!moduleEnabled(which)) {
+    which = window.HDModules ? window.HDModules.firstEnabled(window.HDModules.current, which) : "dispositivos";
+  }
   Object.keys(SUB_APPS).forEach((key) => {
     const cfg = SUB_APPS[key];
     const active = key === which;

@@ -1,0 +1,8 @@
+{
+  "appId": "com.hadomotics.standalone",
+  "appName": "HADomotics",
+  "webDir": "www",
+  "android": { "allowMixedContent": false, "captureInput": true, "webContentsDebuggingEnabled": false },
+  "server": { "androidScheme": "https" },
+  "plugins": { "CapacitorHttp": { "enabled": false } }
+}
