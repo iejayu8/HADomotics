@@ -1,0 +1,35 @@
+configuration:
+  log_level:
+    name: Nivel de registro
+    description: Detalle del registro (log) del add-on HADomotics.
+  allow_direct_access:
+    name: Permitir acceso directo
+    description: >-
+      Desactivado por defecto. Si lo activas, un cliente que no sea el ingress
+      de Home Assistant puede llamar al add-on con un token de acceso de larga
+      duración de Home Assistant (Authorization: Bearer). El puerto del host
+      sigue sin publicarse hasta que pongas uno en la página Red. Mejor usa el
+      ingress.
+  cors_origins:
+    name: Orígenes CORS
+    description: >-
+      Orígenes de navegador separados por comas que se permiten con el acceso
+      directo activado, por ejemplo http://homeassistant.local:8123. Déjalo
+      vacío para rechazar llamadas de otros orígenes. El comodín (*) se ignora.
+  modules:
+    name: Módulos
+    description: >-
+      Elige qué partes del panel usas. Un módulo desactivado desaparece del
+      todo (sin pestaña, sin botón de navegación y sin ajustes) y no trabaja
+      en segundo plano. Deja al menos uno activo; si los desactivas todos, el
+      add-on lo avisa en el registro y activa los tres.
+    fields:
+      dispositivos:
+        name: Dispositivos
+        description: Planos con luces, enchufes, persianas y demás dispositivos.
+      energia:
+        name: Energía
+        description: Carga del coche, solar/inversor, batería y flujo de energía.
+      seguridad:
+        name: Seguridad
+        description: Panel de alarma Alarmo, zonas, sirena y presencia en los planos.

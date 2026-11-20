@@ -1179,14 +1179,24 @@ async function loadFloors() {
 // Event wiring
 // ---------------------------------------------------------------------------
 
-document.addEventListener("DOMContentLoaded", async () => {
-  if (window.HADomoticsPlan) await window.HADomoticsPlan.load();
-  await loadFloors();
-  setViewMode(true);
+// Módulos activos (HDModules, ver modules.js). Sin él, todo activo.
+function moduleEnabled(key) {
+  return !window.HDModules || window.HDModules.isEnabled(key);
+}
 
-  if (floors.length > 0) {
-    const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    await selectFloor(sorted[0].id);
+document.addEventListener("DOMContentLoaded", async () => {
+  if (window.HDModules && window.HDModules.ready) await window.HDModules.ready;
+  // Dispositivos desactivado: ni planos, ni sondeo de estados, ni gestos.
+  const devicesOn = moduleEnabled("dispositivos");
+  if (devicesOn) {
+    if (window.HADomoticsPlan) await window.HADomoticsPlan.load();
+    await loadFloors();
+    setViewMode(true);
+
+    if (floors.length > 0) {
+      const sorted = [...floors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      await selectFloor(sorted[0].id);
+    }
   }
 
   const duplicateBtn = $("btnDuplicateElement");
@@ -1368,7 +1378,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     showApp("dispositivos");
   }
 
-  installFloorSwipe();
+  if (devicesOn) installFloorSwipe();
 });
 
 const SUB_APPS = {
@@ -1379,6 +1389,10 @@ const SUB_APPS = {
 
 function showApp(which) {
   if (!SUB_APPS[which]) which = "dispositivos";
+  // Un módulo desactivado no se puede abrir: se va al primero activo.
+  if (!moduleEnabled(which)) {
+    which = window.HDModules ? window.HDModules.firstEnabled(window.HDModules.current, which) : "dispositivos";
+  }
   Object.keys(SUB_APPS).forEach((key) => {
     const cfg = SUB_APPS[key];
     const active = key === which;

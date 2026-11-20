@@ -15,3 +15,20 @@ configuration:
       Comma-separated browser origins allowed when direct access is on,
       for example http://homeassistant.local:8123. Leave empty to refuse
       cross-origin browser calls. A wildcard (*) is ignored.
+  modules:
+    name: Modules
+    description: >-
+      Choose which parts of the panel you use. A disabled module disappears
+      completely (no tab, no navigation button, no settings) and does no work
+      in the background. Keep at least one on; if all are off, the add-on logs
+      a warning and turns all three on.
+    fields:
+      dispositivos:
+        name: Devices
+        description: Floor plans with lights, switches, covers and other devices.
+      energia:
+        name: Energy
+        description: Car charging, solar/inverter, battery and the energy flow.
+      seguridad:
+        name: Security
+        description: Alarmo alarm panel, zones, siren and presence on the floor plans.

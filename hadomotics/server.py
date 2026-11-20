@@ -216,6 +216,64 @@ def _configured_cors_origins() -> set[str]:
     return origins
 
 
+# ---------------------------------------------------------------------------
+# Módulos (Dispositivos / Energía / Seguridad), configurables en las opciones
+# del add-on. Si faltan (instalaciones antiguas) cuentan como activos; si el
+# usuario los apaga todos, se avisa en el log y se activan los tres.
+# ---------------------------------------------------------------------------
+MODULE_KEYS = ("dispositivos", "energia", "seguridad")
+_TRUE_WORDS = {"1", "true", "yes", "on"}
+_FALSE_WORDS = {"0", "false", "no", "off"}
+_modules_warned = False
+
+
+def _module_flag(value) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() not in _FALSE_WORDS
+    return bool(value)
+
+
+def normalize_modules(raw) -> dict:
+    """{dispositivos, energia, seguridad} -> bool. Missing = True; all off = all on."""
+    global _modules_warned
+    raw = raw if isinstance(raw, dict) else {}
+    mods = {key: _module_flag(raw.get(key)) for key in MODULE_KEYS}
+    if not any(mods.values()):
+        if not _modules_warned:
+            log.warning(
+                "All modules are disabled in the add-on options; enabling all of them "
+                "(Dispositivos, Energía, Seguridad). Leave at least one enabled."
+            )
+            _modules_warned = True
+        return {key: True for key in MODULE_KEYS}
+    return mods
+
+
+def enabled_modules() -> dict:
+    return normalize_modules(_addon_options().get("modules"))
+
+
+# Routes owned by one module. A disabled module answers 404 (as if it did not
+# exist). Floors and images stay available: Seguridad draws the same plans.
+def _module_for_path(path: str) -> str | None:
+    if path == "/energia" or path.startswith("/energia/") or path.startswith("/api/energy/"):
+        return "energia"
+    if path == "/seguridad" or path.startswith("/seguridad/") or path.startswith("/api/security/"):
+        return "seguridad"
+    if path == "/api/elements/colors" or (path.startswith("/api/floors/") and "/elements" in path):
+        return "dispositivos"
+    return None
+
+
+def _module_gate():
+    key = _module_for_path(request.path)
+    if key and not enabled_modules().get(key, True):
+        return jsonify({"error": "Module disabled", "module": key}), 404
+    return None
+
+
 def _peer_ip() -> str:
     ip = request.remote_addr or ""
     if ip.startswith("::ffff:"):
@@ -420,6 +478,7 @@ _READ_ONLY_EXACT = {
     "/api/security/map",
     "/api/security/state",
     "/api/plan/overlays",
+    "/api/modules",
 }
 
 
@@ -472,7 +531,10 @@ def _auth_gate():
             resp = app.make_response(("", 204))
             return _apply_cors(resp)
         return jsonify({"error": "Origin not allowed"}), 403
-    return _authorize_request()
+    denied = _authorize_request()
+    if denied is not None:
+        return denied
+    return _module_gate()
 
 
 @app.after_request
@@ -1086,6 +1148,12 @@ def get_global_config():
     return jsonify({k: v for k, v in config.items() if k != "floors"})
 
 
+@app.route("/api/modules", methods=["GET"])
+def get_modules():
+    """Which modules the frontend should show (add-on option `modules`)."""
+    return jsonify({"modules": enabled_modules()})
+
+
 @app.route("/api/backup", methods=["GET"])
 def backup_config():
     config = load_config()
@@ -1307,5 +1375,9 @@ if __name__ == "__main__":
         bool(get_ha_token()),
         direct_access_enabled(),
         INGRESS_SOURCE_IP,
+    )
+    log.info(
+        "Modules: %s",
+        ", ".join(f"{k}={'on' if v else 'off'}" for k, v in enabled_modules().items()),
     )
     app.run(host="0.0.0.0", port=8099, debug=False, threaded=True)
