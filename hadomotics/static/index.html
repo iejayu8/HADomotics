@@ -150,20 +150,38 @@
             <option value="cover">Cover / Blind</option>
             <option value="camera">Camera</option>
             <option value="custom">Custom</option>
+            <option value="fridge">Nevera</option>
+            <option value="dishwasher">Lavavajillas</option>
+            <option value="vacuum">Robot aspirador / friegasuelos</option>
           </select>
         </div>
 
         <div class="form-group">
           <label for="propEntityId">Entity ID</label>
-          <input type="text" id="propEntityId" placeholder="light.living_room" />
+          <input type="text" id="propEntityId" placeholder="light.living_room" list="entityOptions" />
+        </div>
+
+        <div class="form-group appliance-group" id="applianceGroup" style="display:none">
+          <label>Entidades del electrodoméstico</label>
+          <small id="applianceHint"></small>
+          <button type="button" class="btn btn-secondary" id="btnDetectAppliance">
+            <span class="material-icons">search</span> Detectar entidades
+          </button>
+          <small>Busca en el mismo dispositivo de Home Assistant que la entidad principal. Puedes cambiar cualquiera a mano.</small>
+          <div class="appl-roles" id="applianceRoles"></div>
         </div>
 
         <div class="form-group">
-          <label for="propIcon">Icon (MDI name)</label>
+          <label for="propSvgIcon">Icono en el plano</label>
+          <select id="propSvgIcon"><option value="auto">Automático (según tipo y nombre)</option></select>
+        </div>
+
+        <div class="form-group">
+          <label for="propIcon">Icono MDI (tarjeta Lovelace)</label>
           <input type="text" id="propIcon" placeholder="lightbulb" />
         </div>
 
-        <div class="form-group form-group-row">
+        <div class="form-group form-group-row non-appliance-only">
           <div>
             <label for="propColorOn">Color On</label>
             <input type="color" id="propColorOn" value="#4CAF50" />
@@ -174,7 +192,7 @@
           </div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group non-appliance-only">
           <label for="propTapAction">Tap Action</label>
           <select id="propTapAction">
             <option value="toggle">Toggle</option>
@@ -405,6 +423,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <script src="static/js/plan_overlays.js"></script>
+  <script src="static/js/element_icons.js"></script>
   <script src="static/js/appliances.js"></script>
   <script src="static/js/app.js"></script>
   <script src="static/energia/js/transport.js"></script>

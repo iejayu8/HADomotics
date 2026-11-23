@@ -1,0 +1,190 @@
+{
+  "_doc": "Tipos de elemento de electrodoméstico (nevera, lavavajillas, robot aspirador/friegasuelos). No hay entity_ids fijos: cada elemento guarda su entidad principal (entity_id) y, en appliance_entities, la entidad de cada función (rol). Los roles se descubren en las entidades del mismo dispositivo de Home Assistant (translation_key, device_class o final del entity_id) y se pueden cambiar a mano en el formulario. Las ventanas de control usan los roles, no entidades.",
+  "kinds": {
+    "fridge": {
+      "label": "Nevera",
+      "icon": "nevera",
+      "main_hint": "Cualquier entidad de la nevera, p. ej. la temperatura del frigorífico",
+      "roles": {
+        "temp_cooler": { "label": "Temperatura frigorífico", "domain": "sensor", "keys": ["cooler_temperature", "fridge_temperature", "refrigerator_temperature"], "suffix": ["temperatura_del_frigorifico", "fridge_temperature", "cooler_temperature"] },
+        "temp_freezer": { "label": "Temperatura congelador", "domain": "sensor", "keys": ["freezer_temperature"], "suffix": ["temperatura_del_congelador", "freezer_temperature"] },
+        "set_cooler": { "label": "Consigna frigorífico", "domain": "number", "keys": ["cooler_temperature", "fridge_temperature", "refrigerator_temperature"], "suffix": ["temperatura_del_frigorifico", "fridge_temperature", "cooler_temperature"] },
+        "set_freezer": { "label": "Consigna congelador", "domain": "number", "keys": ["freezer_temperature"], "suffix": ["temperatura_del_congelador", "freezer_temperature"] },
+        "power_cool": { "label": "Power cool", "domain": "switch", "keys": ["power_cool", "rapid_cooling"], "suffix": ["power_cool", "super_frio"] },
+        "power_freeze": { "label": "Power freeze", "domain": "switch", "keys": ["power_freeze", "rapid_freezing"], "suffix": ["power_freeze", "super_congelacion"] },
+        "ice_maker": { "label": "Cubitos de hielo", "domain": "switch", "keys": ["ice_maker"], "suffix": ["cubitos_de_hielo", "ice_maker"] },
+        "door_cooler": { "label": "Puerta frigorífico", "domain": "binary_sensor", "keys": ["cooler_door", "fridge_door", "refrigerator_door"], "suffix": ["puerta_del_frigorifico", "fridge_door", "cooler_door"] },
+        "door_freezer": { "label": "Puerta congelador", "domain": "binary_sensor", "keys": ["freezer_door"], "suffix": ["puerta_del_congelador", "freezer_door"] },
+        "power": { "label": "Potencia", "domain": "sensor", "device_class": ["power"], "suffix": ["potencia", "power"] }
+      },
+      "badge": [
+        { "role": "temp_cooler", "format": "temp" },
+        { "role": "temp_freezer", "format": "temp" }
+      ],
+      "alerts": [
+        { "role": "door_cooler", "when": ["on"], "text": "Puerta del frigorífico abierta" },
+        { "role": "door_freezer", "when": ["on"], "text": "Puerta del congelador abierta" }
+      ],
+      "status": [
+        { "role": "temp_cooler", "label": "Frigorífico", "format": "temp" },
+        { "role": "temp_freezer", "label": "Congelador", "format": "temp" },
+        { "role": "door_cooler", "label": "Puerta del frigorífico", "labels": { "on": "Abierta", "off": "Cerrada" }, "alert": ["on"] },
+        { "role": "door_freezer", "label": "Puerta del congelador", "labels": { "on": "Abierta", "off": "Cerrada" }, "alert": ["on"] },
+        { "role": "power", "label": "Potencia", "format": "value" }
+      ],
+      "controls": [
+        { "type": "number", "role": "set_cooler", "label": "Temperatura del frigorífico" },
+        { "type": "number", "role": "set_freezer", "label": "Temperatura del congelador" },
+        { "type": "switch", "role": "power_cool", "label": "Super frío (Power cool)" },
+        { "type": "switch", "role": "power_freeze", "label": "Super congelación (Power freeze)" },
+        { "type": "switch", "role": "ice_maker", "label": "Cubitos de hielo" }
+      ],
+      "actions": []
+    },
+    "dishwasher": {
+      "label": "Lavavajillas",
+      "icon": "lavavajillas",
+      "main_hint": "Cualquier entidad del lavavajillas, p. ej. su estado de operación",
+      "roles": {
+        "operation_state": { "label": "Estado de operación", "domain": "sensor", "keys": ["operation_state"], "suffix": ["estado_de_operacion", "operation_state"] },
+        "door": { "label": "Puerta", "domain": "sensor", "keys": ["door"], "suffix": ["puerta", "door"] },
+        "progress": { "label": "Progreso", "domain": "sensor", "keys": ["program_progress"], "suffix": ["progreso_del_programa", "program_progress"] },
+        "finish_time": { "label": "Hora de fin", "domain": "sensor", "keys": ["program_finish_time"], "suffix": ["hora_de_finalizacion_del_programa", "program_finish_time"] },
+        "selected_program": { "label": "Programa seleccionado", "domain": "select", "keys": ["selected_program"], "suffix": ["programa_seleccionado", "selected_program"] },
+        "active_program": { "label": "Programa activo", "domain": "select", "keys": ["active_program"], "suffix": ["programa_activo", "active_program"] },
+        "stop": { "label": "Detener programa", "domain": "button", "keys": ["stop_program"], "suffix": ["detener_programa", "stop_program"] },
+        "power": { "label": "Encendido", "domain": "switch", "keys": ["power"], "suffix": ["energia", "power"] },
+        "half_load": { "label": "Media carga", "domain": "switch", "keys": ["half_load"], "suffix": ["media_carga", "half_load"] },
+        "extra_dry": { "label": "Extra seco", "domain": "switch", "keys": ["extra_dry"], "suffix": ["extra_seco", "extra_dry"] },
+        "hygiene": { "label": "Higiene +", "domain": "switch", "keys": ["hygiene_plus"], "suffix": ["higiene", "hygiene_plus"] },
+        "remote_start": { "label": "Inicio remoto", "domain": "binary_sensor", "keys": ["remote_start"], "suffix": ["inicio_remoto", "remote_start"] }
+      },
+      "running": { "role": "operation_state", "when": ["run", "delayedstart", "pause"] },
+      "badge": [
+        { "role": "operation_state", "labels": "dishwasher_state" },
+        { "role": "finish_time", "format": "remaining" }
+      ],
+      "alerts": [
+        { "role": "operation_state", "when": ["error", "actionrequired"], "text": "El lavavajillas necesita atención" }
+      ],
+      "status": [
+        { "role": "operation_state", "label": "Estado", "labels": "dishwasher_state", "alert": ["error", "actionrequired"] },
+        { "role": "active_program", "label": "Programa en curso", "labels": "dishwasher_program" },
+        { "role": "progress", "label": "Progreso", "format": "value" },
+        { "role": "finish_time", "label": "Tiempo restante", "format": "remaining" },
+        { "role": "door", "label": "Puerta", "labels": { "closed": "Cerrada", "locked": "Bloqueada", "open": "Abierta" } },
+        { "role": "remote_start", "label": "Inicio remoto", "labels": { "on": "Permitido", "off": "No permitido (actívalo en el aparato)" } }
+      ],
+      "controls": [
+        { "type": "switch", "role": "power", "label": "Encendido" },
+        { "type": "select", "role": "selected_program", "label": "Programa", "labels": "dishwasher_program" },
+        { "type": "switch", "role": "half_load", "label": "Media carga" },
+        { "type": "switch", "role": "extra_dry", "label": "Extra seco" },
+        { "type": "switch", "role": "hygiene", "label": "Higiene +" }
+      ],
+      "actions": [
+        {
+          "id": "start", "label": "Iniciar", "icon": "play_arrow",
+          "domain": "select", "service": "select_option", "role": "active_program",
+          "option_from": "selected_program", "option_labels": "dishwasher_program",
+          "enabled_when": [
+            { "role": "operation_state", "in": ["ready", "inactive"] },
+            { "role": "remote_start", "in": ["on"] }
+          ],
+          "confirm": "¿Iniciar el programa «{option}» en el lavavajillas?"
+        },
+        {
+          "id": "stop", "label": "Detener", "icon": "stop",
+          "domain": "button", "service": "press", "role": "stop",
+          "enabled_when": [{ "role": "operation_state", "in": ["run", "pause", "delayedstart", "actionrequired"] }],
+          "confirm": "¿Detener el programa del lavavajillas?"
+        }
+      ],
+      "notes": ["Home Assistant no expone «pausar» para los lavavajillas Home Connect: solo iniciar el programa seleccionado y detenerlo."]
+    },
+    "vacuum": {
+      "label": "Robot aspirador / friegasuelos",
+      "icon": "robot",
+      "main_hint": "La entidad vacuum.* del robot",
+      "main_domain": "vacuum",
+      "roles": {
+        "vacuum": { "label": "Robot", "domain": "vacuum" },
+        "battery": { "label": "Batería", "domain": "sensor", "device_class": ["battery"], "suffix": ["bateria", "battery"] },
+        "status": { "label": "Estado detallado", "domain": "sensor", "keys": ["status"], "suffix": ["_estado", "_status"] },
+        "current_room": { "label": "Habitación actual", "domain": "sensor", "keys": ["current_room"], "suffix": ["habitacion_actual", "current_room"] },
+        "progress": { "label": "Progreso", "domain": "sensor", "keys": ["clean_percent"], "suffix": ["progreso_de_la_limpieza", "cleaning_progress"] },
+        "error": { "label": "Error", "domain": "sensor", "keys": ["vacuum_error"], "suffix": ["error_de_aspirador", "vacuum_error"] },
+        "dock_error": { "label": "Error de la base", "domain": "sensor", "keys": ["dock_error"], "suffix": ["error_en_la_base", "dock_error"] },
+        "clean_mode": { "label": "Modo de limpieza", "domain": "select", "keys": ["cleaning_mode"], "suffix": ["modo_de_limpieza", "cleaning_mode"] },
+        "dirty_box": { "label": "Depósito agua sucia", "domain": "binary_sensor", "keys": ["dirty_box_full"], "suffix": ["caja_de_agua_sucia", "dirty_box_full"] },
+        "clean_box": { "label": "Depósito agua limpia", "domain": "binary_sensor", "keys": ["clean_box_empty"], "suffix": ["caja_de_agua_limpia", "clean_box_empty"] }
+      },
+      "running": { "role": "vacuum", "when": ["cleaning", "returning"] },
+      "badge": [
+        { "role": "battery", "format": "value" },
+        { "role": "vacuum", "labels": "vacuum_state" }
+      ],
+      "alerts": [
+        { "role": "error", "not": ["none", "unknown", "unavailable"], "text": "Error de la aspiradora" },
+        { "role": "dock_error", "not": ["ok", "unknown", "unavailable"], "text": "Error en la base" },
+        { "role": "clean_box", "when": ["on"], "text": "Depósito de agua limpia: revisar" },
+        { "role": "dirty_box", "when": ["on"], "text": "Depósito de agua sucia: revisar" }
+      ],
+      "status": [
+        { "role": "vacuum", "label": "Estado", "labels": "vacuum_state" },
+        { "role": "status", "label": "Detalle", "labels": "vacuum_detail" },
+        { "role": "battery", "label": "Batería", "format": "value" },
+        { "role": "clean_mode", "label": "Modo de limpieza", "labels": "vacuum_clean_mode" },
+        { "role": "vacuum", "attribute": "fan_speed", "label": "Potencia de aspiración", "labels": "vacuum_fan" },
+        { "role": "current_room", "label": "Habitación actual" },
+        { "role": "progress", "label": "Progreso", "format": "value" },
+        { "role": "error", "label": "Error", "labels": { "none": "Ninguno" }, "alert_not": ["none", "unknown", "unavailable"] },
+        { "role": "dock_error", "label": "Base", "labels": { "ok": "Sin errores" }, "alert_not": ["ok", "unknown", "unavailable"] }
+      ],
+      "controls": [
+        { "type": "select", "role": "clean_mode", "label": "Modo de limpieza", "labels": "vacuum_clean_mode" },
+        { "type": "fan_speed", "role": "vacuum", "label": "Potencia de aspiración", "labels": "vacuum_fan" }
+      ],
+      "actions": [
+        { "id": "start", "label": "Iniciar", "icon": "play_arrow", "domain": "vacuum", "service": "start", "role": "vacuum",
+          "enabled_when": [{ "role": "vacuum", "in": ["docked", "idle", "paused", "returning", "error"] }] },
+        { "id": "pause", "label": "Pausar", "icon": "pause", "domain": "vacuum", "service": "pause", "role": "vacuum",
+          "enabled_when": [{ "role": "vacuum", "in": ["cleaning", "returning"] }] },
+        { "id": "home", "label": "Volver a la base", "icon": "home", "domain": "vacuum", "service": "return_to_base", "role": "vacuum",
+          "enabled_when": [{ "role": "vacuum", "in": ["cleaning", "paused", "idle", "error", "returning"] }] },
+        { "id": "locate", "label": "Localizar", "icon": "volume_up", "domain": "vacuum", "service": "locate", "role": "vacuum" }
+      ]
+    }
+  },
+  "labels": {
+    "dishwasher_state": {
+      "inactive": "Inactivo", "ready": "Listo", "delayedstart": "Inicio diferido", "run": "En marcha", "pause": "En pausa",
+      "actionrequired": "Requiere acción", "finished": "Terminado", "error": "Error", "aborting": "Cancelando"
+    },
+    "dishwasher_program": {
+      "dishcare_dishwasher_program_eco_50": "Eco 50 °C",
+      "dishcare_dishwasher_program_auto_2": "Auto 45-65 °C",
+      "dishcare_dishwasher_program_intensiv_70": "Intensivo 70 °C",
+      "dishcare_dishwasher_program_quick_65": "Rápido 65 °C",
+      "dishcare_dishwasher_program_machine_care": "Cuidado de la máquina",
+      "dishcare_dishwasher_program_pre_rinse": "Prelavado",
+      "unknown": "Ninguno"
+    },
+    "vacuum_state": {
+      "docked": "En la base", "cleaning": "Limpiando", "returning": "Volviendo a la base", "paused": "En pausa",
+      "idle": "Parada", "error": "Error"
+    },
+    "vacuum_detail": {
+      "charging": "Cargando", "charging_complete": "Carga completa", "cleaning": "Limpiando", "segment_cleaning": "Limpiando habitaciones",
+      "zoned_cleaning": "Limpiando zona", "spot_cleaning": "Limpieza puntual", "returning_home": "Volviendo a la base", "docking": "Entrando en la base",
+      "paused": "En pausa", "idle": "Parada", "washing_the_mop": "Lavando la mopa", "going_to_wash_the_mop": "Va a lavar la mopa",
+      "emptying_the_bin": "Vaciando el depósito", "air_drying_stopping": "Terminando el secado", "mapping": "Creando mapa", "error": "Error",
+      "device_offline": "Sin conexión", "charger_disconnected": "Base desconectada", "charging_problem": "Problema de carga"
+    },
+    "vacuum_clean_mode": { "vacuum": "Aspirar", "vac_and_mop": "Aspirar y fregar", "mop": "Fregar" },
+    "vacuum_fan": {
+      "quiet": "Silencioso", "balanced": "Equilibrado", "turbo": "Turbo", "max": "Máximo", "max_plus": "Máximo+",
+      "off": "Sin aspirar", "smart_mode": "Inteligente", "custom": "Personalizado"
+    }
+  }
+}

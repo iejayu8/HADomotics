@@ -1875,55 +1875,116 @@ def _assert_invoke_blocked(srv):
 
 
 # ---------------------------------------------------------------------------
-# 3.7.0 — electrodomésticos en el plano
+# 3.8.0 — electrodomésticos como elementos normales
 # ---------------------------------------------------------------------------
 
-def _put_appliance(c, **body):
-    payload = {"id": "roborock", "floor": "planta_baja", "x": 0.5, "y": 0.75}
-    payload.update(body)
-    return c.put("/api/appliances/positions", data=json.dumps(payload), content_type="application/json")
+FRIDGE_ROLES = {
+    "temp_cooler": "sensor.cocina_nevera_temperatura_del_frigorifico",
+    "set_cooler": "number.cocina_nevera_temperatura_del_frigorifico",
+    "set_freezer": "number.cocina_nevera_temperatura_del_congelador",
+    "power_cool": "switch.cocina_nevera_power_cool",
+}
 
 
-def test_appliance_map_is_an_ingress_read(ingress_member):
-    import appliances
-
-    r = ingress_member.get("/api/appliances/map")
-    assert r.status_code == 200
-    assert [a["id"] for a in r.get_json()["appliances"]] == [a["id"] for a in appliances.load_map()["appliances"]]
+def _new_floor(c):
+    return c.post("/api/floors", data=json.dumps({"name": "PB"}), content_type="application/json").get_json()
 
 
-def test_admin_moves_appliance_and_it_persists_without_touching_ha(client):
+def _add_element(c, floor_id, **body):
+    return c.post(f"/api/floors/{floor_id}/elements", data=json.dumps(body), content_type="application/json")
+
+
+def _put_element(c, floor_id, el_id, **body):
+    return c.put(f"/api/floors/{floor_id}/elements/{el_id}", data=json.dumps(body), content_type="application/json")
+
+
+def test_no_appliance_is_predefined(client):
     import server as srv
+
+    cfg = srv.load_config()
+    assert not any(e.get("type") in ("fridge", "dishwasher", "vacuum") for f in cfg["floors"] for e in f.get("elements", []))
+    assert client.get("/api/appliances/map").status_code == 404
+    assert client.put("/api/appliances/positions", data="{}", content_type="application/json").status_code in (404, 405)
+
+
+def test_appliance_types_are_an_ingress_read(ingress_member):
+    r = ingress_member.get("/api/appliances/types")
+    assert r.status_code == 200
+    assert set(r.get_json()["kinds"]) == {"fridge", "dishwasher", "vacuum"}
+
+
+def test_appliance_is_added_like_any_element_and_roles_are_sanitized(client):
+    floor = _new_floor(client)
+    el = _add_element(client, floor["id"], x=100, y=100, type="button", label="New Element").get_json()
+    r = _put_element(client, floor["id"], el["id"], type="fridge", label="Nevera",
+                     entity_id="sensor.cocina_nevera_temperatura_del_frigorifico", width=48, height=48,
+                     svg_icon="auto",
+                     appliance_entities={**FRIDGE_ROLES, "set_freezer": "select.no_es_un_number",
+                                         "inventado": "switch.x", "power_freeze": "rm -rf /"})
+    assert r.status_code == 200
+    got = r.get_json()
+    assert got["type"] == "fridge" and got["svg_icon"] == "auto"
+    # Rol con dominio equivocado, rol inventado y basura: fuera.
+    assert got["appliance_entities"] == {k: v for k, v in FRIDGE_ROLES.items() if k != "set_freezer"}
+    # Cambiar a otro tipo normal borra los roles.
+    r = _put_element(client, floor["id"], el["id"], type="button")
+    assert "appliance_entities" not in r.get_json()
+
+
+def test_duplicate_keeps_appliance_roles_and_icon(client):
+    floor = _new_floor(client)
+    r = _add_element(client, floor["id"], x=1, y=2, type="vacuum", entity_id="vacuum.robot", svg_icon="robot",
+                     rotation=0, appliance_entities={"vacuum": "vacuum.robot", "battery": "sensor.robot_bateria"})
+    got = r.get_json()
+    assert r.status_code == 201
+    assert got["appliance_entities"] == {"vacuum": "vacuum.robot", "battery": "sensor.robot_bateria"}
+    assert got["svg_icon"] == "robot"
+
+
+def test_proxy_scope_follows_configured_appliance_elements(client):
+    import server as srv
+    from unittest.mock import patch, MagicMock
+
+    tokens = _Tokens(supervisor="supervisor-secret")
+    ok = MagicMock(status_code=200)
+    ok.json.return_value = []
+    num = {"entity_id": "number.cocina_nevera_temperatura_del_frigorifico", "value": 4}
+    try:
+        with patch("server.requests.post", return_value=ok) as mock_post:
+            # Sin ningún electrodoméstico colocado: bloqueado.
+            assert _service_post(client, "number", "set_value", num).status_code == 403
+            floor = _new_floor(client)
+            el = _add_element(client, floor["id"], x=1, y=1).get_json()
+            _put_element(client, floor["id"], el["id"], type="fridge",
+                         entity_id="sensor.cocina_nevera_temperatura_del_frigorifico", appliance_entities=FRIDGE_ROLES)
+            assert _service_post(client, "number", "set_value", num).status_code == 200
+            # Otros number/select siguen bloqueados.
+            assert _service_post(client, "number", "set_value", {"entity_id": "number.otro", "value": 1}).status_code == 403
+            assert mock_post.call_count == 1
+            # Al borrar el elemento se cierra otra vez.
+            client.delete(f"/api/floors/{floor['id']}/elements/{el['id']}")
+            assert _service_post(client, "number", "set_value", num).status_code == 403
+        assert mock_post.call_count == 1
+    finally:
+        tokens.close()
+
+
+def test_charger_limit_and_siren_stay_blocked_even_if_assigned_to_an_appliance(client):
     from unittest.mock import patch
 
+    floor = _new_floor(client)
+    el = _add_element(client, floor["id"], x=1, y=1).get_json()
+    _put_element(client, floor["id"], el["id"], type="fridge", entity_id="number.evse_charging_power_limit",
+                 appliance_entities={"set_cooler": "number.evse_charging_power_limit"})
+    el2 = _add_element(client, floor["id"], x=2, y=2).get_json()
+    tone = "select.heiman_warningdevice_ef_3_0_tono_de_sirena_predeterminado"
+    _put_element(client, floor["id"], el2["id"], type="dishwasher", entity_id=tone,
+                 appliance_entities={"selected_program": tone, "active_program": tone})
     with patch("server.requests.post") as mock_post:
-        r = _put_appliance(client)
-    assert r.status_code == 200
+        evse = _service_post(client, "number", "set_value", {"entity_id": "number.evse_charging_power_limit", "value": 1})
+        siren = _service_post(client, "select", "select_option", {"entity_id": tone, "option": "x"})
+    assert evse.status_code == 403 and siren.status_code == 403
     mock_post.assert_not_called()
-    assert srv.load_config()["appliance_positions"]["roborock"] == {"floor": "planta_baja", "x": 0.5, "y": 0.75}
-    rb = next(a for a in client.get("/api/appliances/map").get_json()["appliances"] if a["id"] == "roborock")
-    assert rb["position"] == [0.5, 0.75] and rb["custom"] is True
-    assert _put_appliance(client, id="horno").status_code == 400
-    assert _put_appliance(client, x=5).status_code == 400
-
-
-def test_only_admins_move_appliances(ingress_member, lan_client):
-    import server as srv
-
-    assert _put_appliance(ingress_member).status_code == 403
-    assert _put_appliance(lan_client).status_code == 401
-    assert "appliance_positions" not in srv.load_config()
-
-
-def test_backup_restore_keeps_appliance_positions(client):
-    import server as srv
-
-    assert _put_appliance(client).status_code == 200
-    backup = client.get("/api/backup").get_json()
-    assert backup["appliance_positions"]["roborock"]["x"] == 0.5
-    srv.save_config({"floors": []})
-    assert client.post("/api/restore", data=json.dumps(backup), content_type="application/json").status_code == 200
-    assert srv.load_config()["appliance_positions"]["roborock"]["y"] == 0.75
 
 
 def test_appliance_services_go_through_the_proxy(client):
@@ -1938,18 +1999,50 @@ def test_appliance_services_go_through_the_proxy(client):
                 ("vacuum", "start", {"entity_id": "vacuum.qrevo_edge_2_pro"}),
                 ("vacuum", "locate", {"entity_id": "vacuum.qrevo_edge_2_pro"}),
                 ("vacuum", "set_fan_speed", {"entity_id": "vacuum.qrevo_edge_2_pro", "fan_speed": "turbo"}),
-                ("select", "select_option", {"entity_id": "select.cocina_lavavajillas_programa_activo",
-                                             "option": "dishcare_dishwasher_program_eco_50"}),
                 ("button", "press", {"entity_id": "button.cocina_lavavajillas_detener_programa"}),
-                ("number", "set_value", {"entity_id": "number.cocina_nevera_temperatura_del_frigorifico", "value": 4}),
             ]
             for d, s, data in calls:
                 assert _service_post(client, d, s, data).status_code == 200, (d, s)
             blocked = _service_post(client, "vacuum", "send_command", {"entity_id": "vacuum.qrevo_edge_2_pro"})
-            evse = _service_post(client, "number", "set_value", {"entity_id": "number.evse_charging_power_limit", "value": 1})
-            tone = _service_post(client, "select", "select_option", {
-                "entity_id": "select.heiman_warningdevice_ef_3_0_tono_de_sirena_predeterminado", "option": "x"})
-        assert blocked.status_code == 403 and evse.status_code == 403 and tone.status_code == 403
+        assert blocked.status_code == 403
         assert mock_post.call_count == len(calls)
     finally:
         tokens.close()
+
+
+def test_device_entities_lookup_is_admin_only(ingress_member):
+    assert ingress_member.get("/api/ha/device_entities?entity_id=vacuum.robot").status_code == 403
+
+
+def test_device_entities_lookup_is_read_only(client):
+    import server as srv
+    from unittest.mock import patch
+
+    regs = (
+        [{"entity_id": "vacuum.robot", "device_id": "d1", "translation_key": "roborock", "platform": "roborock"},
+         {"entity_id": "sensor.robot_bateria", "device_id": "d1", "translation_key": None, "platform": "roborock"},
+         {"entity_id": "sensor.robot_dock_error", "device_id": "d2", "translation_key": "dock_error", "platform": "roborock"},
+         {"entity_id": "sensor.otro", "device_id": "d3", "translation_key": None, "platform": "x"},
+         {"entity_id": "switch.robot_off", "device_id": "d1", "translation_key": None, "disabled_by": "integration"}],
+        [{"id": "d1", "name": "Robot", "config_entries": ["e1"]},
+         {"id": "d2", "name": "Robot Dock", "config_entries": ["e1"]},
+         {"id": "d3", "name": "Robot", "config_entries": ["e9"]}],
+    )
+    with patch.object(srv, "_fetch_ha_registries", return_value=regs), patch("server.requests.post") as mock_post:
+        r = client.get("/api/ha/device_entities?entity_id=vacuum.robot")
+        bad = client.get("/api/ha/device_entities?entity_id=../x")
+    assert r.status_code == 200 and bad.status_code == 400
+    assert [e["entity_id"] for e in r.get_json()["entities"]] == ["vacuum.robot", "sensor.robot_bateria", "sensor.robot_dock_error"]
+    mock_post.assert_not_called()
+
+
+def test_old_appliance_positions_are_dropped_on_next_save(client):
+    import server as srv
+
+    cfg = srv.load_config()
+    cfg["appliance_positions"] = {"roborock": {"floor": "planta_baja", "x": 0.5, "y": 0.7}}
+    with open(srv.CONFIG_FILE, "w") as f:
+        json.dump(cfg, f)
+    _new_floor(client)
+    assert "appliance_positions" not in srv.load_config()
+    assert "appliance_positions" not in client.get("/api/backup").get_json()
