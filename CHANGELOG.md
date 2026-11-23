@@ -1,5 +1,38 @@
 # Changelog
 
+## 3.7.0
+
+### Added
+- **Electrodomésticos en el plano de Dispositivos:** nevera, lavavajillas y la aspiradora-fregadora Roborock, cada uno con su icono en su sitio de la planta baja y una etiqueta con lo más importante:
+  - nevera: temperatura del frigorífico y del congelador;
+  - lavavajillas: estado y tiempo restante;
+  - Roborock: batería y estado.
+  - El icono se rellena mientras el aparato funciona. Se marca en rojo si hay una alarma: puerta de la nevera o del congelador abierta, lavavajillas que requiere acción o error, o error de la aspiradora o de la base.
+- **Al pulsar el icono se abren las acciones principales del aparato:**
+  - **Roborock:**
+    - botones Iniciar, Pausar, Volver a la base y Localizar; cada uno se activa solo cuando tiene sentido;
+    - estado, detalle, batería, habitación actual, progreso, error y estado de la base;
+    - modo de limpieza (aspirar / aspirar y fregar / fregar) y potencia de aspiración.
+  - **Lavavajillas:**
+    - estado, programa en curso, progreso, tiempo restante (con la hora de fin), puerta e inicio remoto;
+    - encendido, programa y las opciones media carga, extra seco e higiene;
+    - **Iniciar** arranca el programa elegido (`select.cocina_lavavajillas_programa_activo`) y necesita el inicio remoto activado en el aparato. **Detener** pulsa `button.cocina_lavavajillas_detener_programa`. Los dos piden confirmación.
+    - Home Assistant no expone «pausar» para este lavavajillas, así que no hay botón de pausa.
+  - **Nevera:**
+    - temperatura del frigorífico y del congelador, con su consigna (− / + dentro del mínimo y máximo de la entidad);
+    - Power cool (super frío), Power freeze (super congelación) y cubitos de hielo;
+    - puertas y potencia.
+- **Cómo se llama a Home Assistant:** las acciones usan servicios reales, igual que los demás controles: dentro de Home Assistant con `hass.callService` como el usuario; fuera, con el proxy de servicios del add-on.
+  - El proxy permite ahora `vacuum.locate` y `vacuum.set_fan_speed`.
+  - `number.set_value` y `select.select_option` se permiten solo para las entidades de los aparatos de `appliances_map.json`. El resto de `number`/`select`, como el límite de potencia del cargador, sigue bloqueado.
+  - Ninguna acción se lanza sola: solo al pulsar.
+- **Posición de los aparatos:**
+  - Nevera y lavavajillas están en la cocina (área «Cocina» de Home Assistant); el punto exacto dentro de la cocina es aproximado.
+  - La Roborock y su base no tienen área en Home Assistant. La base se coloca en el recibidor, junto a la entrada, porque el robot informa «Recibidor» como habitación actual mientras carga.
+  - En el modo edición de Dispositivos cada aparato se puede arrastrar. La posición se guarda al soltar, en `appliance_positions` de la configuración del add-on, mediante `PUT /api/appliances/positions`, que es solo para administradores.
+  - Las copias de seguridad incluyen `appliance_positions`.
+- Entidades y textos en `hadomotics/appliances_map.json`; `GET /api/appliances/map` es de solo lectura (cualquier usuario de ingress).
+
 ## 3.5.2
 
 ### Fixed

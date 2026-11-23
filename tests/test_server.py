@@ -1872,3 +1872,84 @@ def _assert_invoke_blocked(srv):
     assert srv._security_invoke("homeassistant", "restart", {})[0] == 403
     assert srv._security_invoke("input_boolean", "toggle", {"entity_id": "input_boolean.x"})[0] == 403
     assert srv._security_invoke("lock", "unlock", {"entity_id": "lock.x"})[0] == 403
+
+
+# ---------------------------------------------------------------------------
+# 3.7.0 — electrodomésticos en el plano
+# ---------------------------------------------------------------------------
+
+def _put_appliance(c, **body):
+    payload = {"id": "roborock", "floor": "planta_baja", "x": 0.5, "y": 0.75}
+    payload.update(body)
+    return c.put("/api/appliances/positions", data=json.dumps(payload), content_type="application/json")
+
+
+def test_appliance_map_is_an_ingress_read(ingress_member):
+    import appliances
+
+    r = ingress_member.get("/api/appliances/map")
+    assert r.status_code == 200
+    assert [a["id"] for a in r.get_json()["appliances"]] == [a["id"] for a in appliances.load_map()["appliances"]]
+
+
+def test_admin_moves_appliance_and_it_persists_without_touching_ha(client):
+    import server as srv
+    from unittest.mock import patch
+
+    with patch("server.requests.post") as mock_post:
+        r = _put_appliance(client)
+    assert r.status_code == 200
+    mock_post.assert_not_called()
+    assert srv.load_config()["appliance_positions"]["roborock"] == {"floor": "planta_baja", "x": 0.5, "y": 0.75}
+    rb = next(a for a in client.get("/api/appliances/map").get_json()["appliances"] if a["id"] == "roborock")
+    assert rb["position"] == [0.5, 0.75] and rb["custom"] is True
+    assert _put_appliance(client, id="horno").status_code == 400
+    assert _put_appliance(client, x=5).status_code == 400
+
+
+def test_only_admins_move_appliances(ingress_member, lan_client):
+    import server as srv
+
+    assert _put_appliance(ingress_member).status_code == 403
+    assert _put_appliance(lan_client).status_code == 401
+    assert "appliance_positions" not in srv.load_config()
+
+
+def test_backup_restore_keeps_appliance_positions(client):
+    import server as srv
+
+    assert _put_appliance(client).status_code == 200
+    backup = client.get("/api/backup").get_json()
+    assert backup["appliance_positions"]["roborock"]["x"] == 0.5
+    srv.save_config({"floors": []})
+    assert client.post("/api/restore", data=json.dumps(backup), content_type="application/json").status_code == 200
+    assert srv.load_config()["appliance_positions"]["roborock"]["y"] == 0.75
+
+
+def test_appliance_services_go_through_the_proxy(client):
+    from unittest.mock import patch, MagicMock
+
+    tokens = _Tokens(supervisor="supervisor-secret")
+    ok = MagicMock(status_code=200)
+    ok.json.return_value = []
+    try:
+        with patch("server.requests.post", return_value=ok) as mock_post:
+            calls = [
+                ("vacuum", "start", {"entity_id": "vacuum.qrevo_edge_2_pro"}),
+                ("vacuum", "locate", {"entity_id": "vacuum.qrevo_edge_2_pro"}),
+                ("vacuum", "set_fan_speed", {"entity_id": "vacuum.qrevo_edge_2_pro", "fan_speed": "turbo"}),
+                ("select", "select_option", {"entity_id": "select.cocina_lavavajillas_programa_activo",
+                                             "option": "dishcare_dishwasher_program_eco_50"}),
+                ("button", "press", {"entity_id": "button.cocina_lavavajillas_detener_programa"}),
+                ("number", "set_value", {"entity_id": "number.cocina_nevera_temperatura_del_frigorifico", "value": 4}),
+            ]
+            for d, s, data in calls:
+                assert _service_post(client, d, s, data).status_code == 200, (d, s)
+            blocked = _service_post(client, "vacuum", "send_command", {"entity_id": "vacuum.qrevo_edge_2_pro"})
+            evse = _service_post(client, "number", "set_value", {"entity_id": "number.evse_charging_power_limit", "value": 1})
+            tone = _service_post(client, "select", "select_option", {
+                "entity_id": "select.heiman_warningdevice_ef_3_0_tono_de_sirena_predeterminado", "option": "x"})
+        assert blocked.status_code == 403 and evse.status_code == 403 and tone.status_code == 403
+        assert mock_post.call_count == len(calls)
+    finally:
+        tokens.close()

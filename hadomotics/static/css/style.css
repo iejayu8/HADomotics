@@ -972,3 +972,158 @@ body.view-mode-active .image-placeholder {
   pointer-events: none;
   z-index: 1;
 }
+
+/* =========================================================
+   Electrodomésticos en el plano (appliances.js)
+   ========================================================= */
+.appliance-marker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  z-index: 12;
+  --appl-color: #38bdf8;
+}
+.appliance-marker.appliance-fridge { --appl-color: #7dd3fc; }
+.appliance-marker.appliance-dishwasher { --appl-color: #a78bfa; }
+.appliance-marker.appliance-vacuum { --appl-color: #34d399; }
+.appliance-marker .appl-inner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transform: translate(-50%, -22px) scale(min(var(--fp-inv, 1), 2.2));
+  transform-origin: 50% 22px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.appliance-marker.editing .appl-inner { cursor: grab; touch-action: none; }
+.appliance-marker .appl-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 18, 32, 0.92);
+  border: 2.5px solid var(--appl-color);
+  color: var(--appl-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  transition: transform .15s ease;
+}
+.appliance-marker .appl-icon svg { width: 26px; height: 26px; }
+.appliance-marker:hover .appl-icon,
+.appliance-marker:focus-visible .appl-icon { transform: scale(1.08); }
+.appliance-marker .appl-badge {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #e5e7eb;
+  background: rgba(11, 18, 32, 0.85);
+  border-radius: 6px;
+  padding: 1px 6px;
+  pointer-events: none;
+}
+.appliance-marker .appl-badge:empty { display: none; }
+.appliance-marker.running .appl-icon {
+  background: var(--appl-color);
+  color: #0b1220;
+  animation: appl-pulse 1.6s ease-in-out infinite;
+}
+.appliance-marker.alert .appl-icon { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(239, 68, 68, .45); }
+.appliance-marker.unavailable .appl-icon { opacity: .55; border-style: dashed; }
+@keyframes appl-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, .35); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 255, 255, 0); }
+}
+
+.appliance-modal {
+  width: min(440px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 18px 18px 14px;
+}
+.appl-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.appl-head-icon {
+  width: 46px; height: 46px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  border: 2.5px solid #38bdf8; color: #38bdf8;
+}
+.appl-head-icon.appliance-fridge { border-color: #7dd3fc; color: #7dd3fc; }
+.appl-head-icon.appliance-dishwasher { border-color: #a78bfa; color: #a78bfa; }
+.appl-head-icon.appliance-vacuum { border-color: #34d399; color: #34d399; }
+.appl-head-icon svg { width: 28px; height: 28px; }
+.appl-head-text { flex: 1; min-width: 0; }
+.appl-head-text h2 { margin: 0; font-size: 1.2rem; }
+.appl-sub { color: var(--text-secondary); font-size: .8rem; }
+.appl-close {
+  background: none; border: none; color: var(--text-secondary); cursor: pointer;
+  padding: 6px; border-radius: 50%;
+}
+.appl-close:hover { background: var(--surface-2); color: var(--text); }
+.appl-alerts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.appl-alert {
+  display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .9rem;
+  color: #fecaca; background: rgba(239, 68, 68, .15); border: 1px solid rgba(239, 68, 68, .5);
+  border-radius: 8px; padding: 6px 10px;
+}
+.appl-alert .material-icons { font-size: 18px; color: var(--danger); }
+.appl-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.appl-action {
+  min-height: 48px; justify-content: center; gap: 6px; font-weight: 600;
+  border-radius: 10px; touch-action: manipulation;
+}
+.appl-action[disabled] { opacity: .4; cursor: not-allowed; }
+.appl-section {
+  border: 1px solid var(--border); border-radius: 10px; padding: 4px 12px; margin-bottom: 10px;
+}
+.appl-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 36px; border-bottom: 1px solid var(--border); font-size: .92rem;
+}
+.appl-row:last-child { border-bottom: none; }
+.appl-label { color: var(--text-secondary); }
+.appl-value { font-weight: 600; text-align: right; }
+.appl-row.bad .appl-value { color: var(--danger); }
+.appl-switch {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 78px; padding: 4px 10px 4px 4px;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); cursor: pointer; font-weight: 600;
+}
+.appl-switch-knob { width: 22px; height: 22px; border-radius: 50%; background: #64748b; transition: background .15s; }
+.appl-switch.on { border-color: var(--success); }
+.appl-switch.on .appl-switch-knob { background: var(--success); }
+.appl-switch[disabled], .appl-step[disabled], .appl-select[disabled] { opacity: .45; cursor: not-allowed; }
+.appl-stepper { display: inline-flex; align-items: center; gap: 8px; }
+.appl-step {
+  width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font-size: 1.2rem; cursor: pointer;
+}
+.appl-step-val { min-width: 54px; text-align: center; font-weight: 700; }
+.appl-select {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 8px; max-width: 60%;
+}
+.appl-note, .appl-error { font-size: .8rem; margin: 4px 2px 8px; }
+.appl-note { color: var(--text-secondary); }
+.appl-error { color: var(--danger); font-weight: 600; }
+.appl-where {
+  display: flex; gap: 6px; align-items: flex-start; font-size: .75rem; color: var(--text-secondary);
+}
+.appl-where .material-icons { font-size: 16px; }
+.appl-action { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.appl-action:not([disabled]):hover { border-color: var(--primary); }
+.appl-action-start:not([disabled]) { background: rgba(34, 197, 94, .18); border-color: rgba(34, 197, 94, .6); }
+.appl-action-stop:not([disabled]) { background: rgba(239, 68, 68, .16); border-color: rgba(239, 68, 68, .55); }
+/* Por encima del dock de plantas; la barra de navegación sigue visible. */
+.modal-overlay.appliance-overlay { z-index: 2600; padding-bottom: var(--nav-h); }
+.appliance-overlay .appliance-modal { max-height: calc(100vh - var(--nav-h) - 24px); max-height: calc(100dvh - var(--nav-h) - 24px); }
+.appliance-marker.editing.unavailable .appl-icon { opacity: 1; border-style: solid; }
