@@ -420,7 +420,7 @@ _READ_ONLY_EXACT = {
     "/api/security/map",
     "/api/security/state",
     "/api/plan/overlays",
-    "/api/appliances/map",
+    "/api/appliances/types",
 }
 
 
@@ -662,6 +662,9 @@ def load_config() -> dict:
 
 
 def save_config(config: dict) -> None:
+    # 3.7.0 guardaba aquí las posiciones de los electrodomésticos predefinidos;
+    # desde 3.8.0 son elementos normales y esa clave ya no se usa.
+    config.pop("appliance_positions", None)
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 
@@ -875,6 +878,13 @@ def create_element(floor_id: str):
         "tap_action": data.get("tap_action", "toggle"),
         "state_position": data.get("state_position", "bottom"),
     }
+    for key in ("rotation", "position", "service", "service_data", "svg_icon", "outside"):
+        if key in data:
+            element[key] = data[key]
+    if element["type"] in _appliances.kinds():
+        element["appliance_entities"] = _appliances.sanitize_entities(
+            element["type"], data.get("appliance_entities") or {}
+        )
     floor.setdefault("elements", []).append(element)
     save_config(config)
     return jsonify(element), 201
@@ -896,11 +906,19 @@ def update_element(floor_id: str, element_id: str):
     updatable = [
         "type", "label", "entity_id", "icon", "x", "y", "width", "height",
         "color_on", "color_off", "tap_action", "rotation", "state_position",
-        "position", "service", "service_data",
+        "position", "service", "service_data", "svg_icon",
     ]
     for key in updatable:
         if key in data:
             elem[key] = data[key]
+    # Electrodomésticos: {rol: entity_id} limpio (roles del tipo, dominio correcto).
+    if elem.get("type") in _appliances.kinds():
+        if "appliance_entities" in data or "type" in data:
+            elem["appliance_entities"] = _appliances.sanitize_entities(
+                elem["type"], data.get("appliance_entities", elem.get("appliance_entities")) or {}
+            )
+    else:
+        elem.pop("appliance_entities", None)
     # Colocado a propósito fuera del dibujo (en el fondo): no se recoloca dentro.
     if "outside" in data:
         elem["outside"] = bool(data["outside"])
@@ -1054,24 +1072,28 @@ def ha_state(entity_id: str):
         return jsonify({"error": "Could not retrieve entity state"}), 503
 
 
-def _load_appliance_entity_services() -> dict:
-    try:
-        import appliances
+import appliances as _appliances  # noqa: E402
 
-        return appliances.entity_scoped_services(appliances.load_map())
-    except Exception as exc:  # pragma: no cover - mapa ilegible
-        log.warning("Could not read appliances map: %s", type(exc).__name__)
+_APPLIANCE_PROTECTED = _appliances.protected_entities()
+
+
+def appliance_entity_services(config: dict | None = None) -> dict:
+    """number.set_value / select.select_option permitidos: solo las entidades de los
+    electrodomésticos colocados en el plano (appliance_entities de sus elementos).
+    Las entidades de Energía y Seguridad (límite del cargador, sirena…) nunca."""
+    try:
+        return _appliances.entity_scoped_services(
+            config if config is not None else load_config(), protected=_APPLIANCE_PROTECTED
+        )
+    except Exception as exc:  # pragma: no cover - tipos ilegibles
+        log.warning("Could not read appliance types: %s", type(exc).__name__)
         return {}
 
 
-# number.set_value / select.select_option solo para las entidades de los
-# electrodomésticos (appliances_map.json): el resto de number/select (p. ej. el
-# límite de potencia del cargador) sigue bloqueado.
-APPLIANCE_ENTITY_SERVICES: dict = _load_appliance_entity_services()
-
-
 def _entity_service_allowed(domain: str, service: str, data) -> bool:
-    allowed = APPLIANCE_ENTITY_SERVICES.get((domain, service))
+    if (domain, service) not in _appliances.ENTITY_SCOPED:
+        return False
+    allowed = appliance_entity_services().get((domain, service))
     if not allowed or not isinstance(data, dict):
         return False
     target = data.get("entity_id")
@@ -1148,8 +1170,6 @@ def backup_config():
 
     if isinstance(config.get("security_positions"), dict) and config["security_positions"]:
         backup["security_positions"] = config["security_positions"]
-    if isinstance(config.get("appliance_positions"), dict) and config["appliance_positions"]:
-        backup["appliance_positions"] = config["appliance_positions"]
 
     return jsonify(backup)
 
@@ -1187,8 +1207,6 @@ def restore_config():
 
     if isinstance(data.get("security_positions"), dict):
         new_config["security_positions"] = data["security_positions"]
-    if isinstance(data.get("appliance_positions"), dict):
-        new_config["appliance_positions"] = data["appliance_positions"]
 
     save_config(new_config)
     return jsonify({"ok": True, "message": "Configuration restored successfully"})
@@ -1329,19 +1347,66 @@ app.register_blueprint(_security_blueprint(
 ))
 
 
-from appliances import create_blueprint as _appliances_blueprint  # noqa: E402
+app.register_blueprint(_appliances.create_blueprint())
 
 
-def _save_appliance_positions(positions: dict) -> None:
-    config = load_config()
-    config["appliance_positions"] = positions
-    save_config(config)
+_REGISTRY_CACHE: dict = {"at": 0.0, "data": None}
+_REGISTRY_TTL = 60.0
 
 
-app.register_blueprint(_appliances_blueprint(
-    load_positions=lambda: load_config().get("appliance_positions", {}),
-    save_positions=_save_appliance_positions,
-))
+def _fetch_ha_registries() -> tuple[list, list] | None:
+    """Registros de entidades y dispositivos de HA (solo lectura, WebSocket)."""
+    now = time.monotonic()
+    if _REGISTRY_CACHE["data"] is not None and now - _REGISTRY_CACHE["at"] < _REGISTRY_TTL:
+        return _REGISTRY_CACHE["data"]
+    token = _token_for_request()
+    if create_connection is None or not token:
+        return None
+    ws = None
+    try:
+        ws = create_connection(HA_WS_URL, timeout=5)
+        if json.loads(ws.recv()).get("type") != "auth_required":
+            return None
+        ws.send(json.dumps({"type": "auth", "access_token": token}))
+        if json.loads(ws.recv()).get("type") != "auth_ok":
+            log.warning("HA registry lookup was not accepted")
+            return None
+        ws.send(json.dumps({"id": 1, "type": "config/entity_registry/list"}))
+        ws.send(json.dumps({"id": 2, "type": "config/device_registry/list"}))
+        got: dict = {}
+        deadline = time.monotonic() + 8
+        while len(got) < 2 and time.monotonic() < deadline:
+            msg = json.loads(ws.recv())
+            if msg.get("type") == "result" and msg.get("id") in (1, 2):
+                if not msg.get("success"):
+                    return None
+                got[msg["id"]] = msg.get("result") or []
+        if len(got) < 2:
+            return None
+        _REGISTRY_CACHE.update(at=now, data=(got[1], got[2]))
+        return got[1], got[2]
+    except Exception as exc:
+        log.warning("HA registry lookup failed: %s", type(exc).__name__)
+        return None
+    finally:
+        if ws is not None:
+            try:
+                ws.close()
+            except Exception:
+                pass
+
+
+@app.route("/api/ha/device_entities", methods=["GET"])
+def ha_device_entities():
+    """Entidades del mismo aparato que ?entity_id= (para rellenar los roles de un
+    electrodoméstico). Solo lectura y solo administradores (puerta del add-on)."""
+    entity_id = str(request.args.get("entity_id") or "").strip()
+    if not _appliances.ENTITY_RE.match(entity_id):
+        return jsonify({"error": "entity_id required"}), 400
+    regs = _fetch_ha_registries()
+    if regs is None:
+        return jsonify({"error": "Could not read Home Assistant registries"}), 503
+    return jsonify({"entity_id": entity_id, "entities": _appliances.device_candidates(entity_id, *regs)})
 
 
 if __name__ == "__main__":

@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.8.0
+
+### Changed
+- **Los electrodomésticos ya no vienen de serie en el add-on.** Nevera, lavavajillas y robot aspirador/friegasuelos pasan a ser tipos de elemento que se añaden como cualquier otro:
+  1. modo edición → **+** → clic en el plano;
+  2. en el panel, **Type** = Nevera, Lavavajillas o Robot aspirador / friegasuelos;
+  3. en **Entity ID**, la entidad principal (por ejemplo `vacuum.qrevo_edge_2_pro`);
+  4. **Detectar entidades** rellena el resto de entidades del mismo dispositivo de Home Assistant (y de su base, en el robot); cada una se puede cambiar a mano;
+  5. **Guardar**.
+  - Se pueden mover, redimensionar, duplicar y borrar como los demás elementos.
+  - Se conservan el icono redondo, la etiqueta en vivo, el aro de «en marcha» / alarma y los paneles de control de 3.7.0.
+  - En el código ya no hay ningún `entity_id` fijo: `hadomotics/appliance_types.json` (antes `appliances_map.json`) describe solo los roles de cada tipo (dominio, `translation_key`, `device_class` o sufijo) para la detección.
+- **Proxy de servicios:** `number.set_value` y `select.select_option` se permiten solo para las entidades asignadas a un electrodoméstico colocado en el plano, y solo en los roles que son controles. Al borrar el elemento se vuelven a bloquear. Las entidades de Energía y Seguridad nunca entran, aunque se asignen a mano: el límite del cargador (`number.evse_charging_power_limit`) y el tono de la sirena siguen dando 403.
+- **Nuevo estilo de iconos en el plano**, propios (SVG en línea, sin dependencias externas), con un único estilo: rejilla de 24, trazo 1,8 redondeado y estados apagado / encendido / no disponible.
+  - Más claros según el uso: persiana (las lamas siguen la posición), puerta de garaje interior, puerta exterior / cancela, puerta, ventana, luz (con rayos al encenderse), modo día, modo noche, escena, aerotermia / clima, temperatura, humedad, energía, depuradora de piscina, interruptor, enchufe, sensor, movimiento, cámara, alarma, sirena, cargador del coche, ventilador, cerradura, altavoz, indicador y genérico. Los electrodomésticos usan el mismo trazo.
+  - Se eligen solos según el tipo, el dominio, la clase de dispositivo y el nombre. El nuevo campo **Icono en el plano** del panel permite fijar otro. El campo MDI de siempre se mantiene para la tarjeta Lovelace.
+  - Sobre colores claros (como el amarillo de «encendido») el icono pasa a oscuro para que se lea. En elementos girados, el icono se mantiene derecho.
+
+### Migración desde 3.7.0
+- No se crea nada automáticamente. La clave `appliance_positions` de 3.7.0 se ignora, se borra al siguiente guardado de la configuración y ya no va en las copias de seguridad. Tras actualizar, los tres aparatos dejan de verse hasta que los añadas con el flujo de arriba (unos segundos cada uno con **Detectar entidades**).
+- `GET /api/appliances/map` y `PUT /api/appliances/positions` desaparecen. Hay dos endpoints nuevos:
+  - `GET /api/appliances/types`: lectura, también desde ingress.
+  - `GET /api/ha/device_entities?entity_id=…`: solo administradores; lee el registro de entidades y dispositivos de Home Assistant para la detección fuera de Home Assistant. Dentro de Home Assistant se usa `hass.entities`/`hass.devices`.
+
+### Fixed
+- El panel de un electrodoméstico podía mostrar «No disponible» si los estados llegaban antes que la planta.
+
 ## 3.7.0
 
 ### Added

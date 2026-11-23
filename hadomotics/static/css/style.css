@@ -373,6 +373,10 @@ body.view-mode-active #backupSection {
 .el-icon {
   font-size: 22px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--el-fg, #fff);
 }
 
 .el-label {
@@ -882,7 +886,7 @@ body.view-mode-active .element-overlay.view-mode .el-label {
 
 body.view-mode-active .element-overlay.view-mode .el-icon {
   font-size: 20px;
-  color: #fff;
+  color: var(--el-fg, #fff);
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
 }
 
@@ -976,70 +980,6 @@ body.view-mode-active .image-placeholder {
 /* =========================================================
    Electrodomésticos en el plano (appliances.js)
    ========================================================= */
-.appliance-marker {
-  position: absolute;
-  width: 0;
-  height: 0;
-  z-index: 12;
-  --appl-color: #38bdf8;
-}
-.appliance-marker.appliance-fridge { --appl-color: #7dd3fc; }
-.appliance-marker.appliance-dishwasher { --appl-color: #a78bfa; }
-.appliance-marker.appliance-vacuum { --appl-color: #34d399; }
-.appliance-marker .appl-inner {
-  position: absolute;
-  left: 0;
-  top: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  transform: translate(-50%, -22px) scale(min(var(--fp-inv, 1), 2.2));
-  transform-origin: 50% 22px;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.appliance-marker.editing .appl-inner { cursor: grab; touch-action: none; }
-.appliance-marker .appl-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(11, 18, 32, 0.92);
-  border: 2.5px solid var(--appl-color);
-  color: var(--appl-color);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
-  transition: transform .15s ease;
-}
-.appliance-marker .appl-icon svg { width: 26px; height: 26px; }
-.appliance-marker:hover .appl-icon,
-.appliance-marker:focus-visible .appl-icon { transform: scale(1.08); }
-.appliance-marker .appl-badge {
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.2;
-  white-space: nowrap;
-  color: #e5e7eb;
-  background: rgba(11, 18, 32, 0.85);
-  border-radius: 6px;
-  padding: 1px 6px;
-  pointer-events: none;
-}
-.appliance-marker .appl-badge:empty { display: none; }
-.appliance-marker.running .appl-icon {
-  background: var(--appl-color);
-  color: #0b1220;
-  animation: appl-pulse 1.6s ease-in-out infinite;
-}
-.appliance-marker.alert .appl-icon { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(239, 68, 68, .45); }
-.appliance-marker.unavailable .appl-icon { opacity: .55; border-style: dashed; }
-@keyframes appl-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, .35); }
-  50% { box-shadow: 0 0 0 8px rgba(255, 255, 255, 0); }
-}
-
 .appliance-modal {
   width: min(440px, 94vw);
   max-height: 88vh;
@@ -1126,4 +1066,70 @@ body.view-mode-active .image-placeholder {
 /* Por encima del dock de plantas; la barra de navegación sigue visible. */
 .modal-overlay.appliance-overlay { z-index: 2600; padding-bottom: var(--nav-h); }
 .appliance-overlay .appliance-modal { max-height: calc(100vh - var(--nav-h) - 24px); max-height: calc(100dvh - var(--nav-h) - 24px); }
-.appliance-marker.editing.unavailable .appl-icon { opacity: 1; border-style: solid; }
+
+/* =========================================================
+   Iconos de los elementos (element_icons.js): mismo estilo para todos.
+   SVG 24×24, trazo 1,8, color del texto; el fondo sigue siendo el color
+   on/off de cada elemento.
+   ========================================================= */
+.el-icon .el-svg { width: 22px; height: 22px; display: block; }
+body.view-mode-active .element-overlay.view-mode .el-icon .el-svg { width: 20px; height: 20px; }
+.element-overlay.el-on .el-icon { filter: drop-shadow(0 0 2px rgba(255, 255, 255, .6)); }
+.element-overlay.el-off .el-icon { opacity: .78; }
+.element-overlay.el-unavailable { filter: grayscale(1); opacity: .6; }
+.el-list-icon { display: inline-flex; width: 20px; height: 20px; color: var(--text-secondary); flex: none; }
+.el-list-icon .el-svg { width: 20px; height: 20px; }
+#elementList li.active .el-list-icon { color: var(--primary); }
+
+/* Electrodomésticos: icono redondo con el color del aparato (diseño 3.7.0),
+   ahora como elemento normal (se dimensiona con su ancho/alto). */
+.element-overlay.appliance-el {
+  --appl-color: #38bdf8;
+  padding: 0;
+  box-shadow: none;
+  background: transparent !important;
+}
+.element-overlay.appliance-fridge { --appl-color: #7dd3fc; }
+.element-overlay.appliance-dishwasher { --appl-color: #a78bfa; }
+.element-overlay.appliance-vacuum { --appl-color: #34d399; }
+.element-overlay.appliance-el .el-label { display: none; }
+.element-overlay.appliance-el .el-icon,
+body.view-mode-active .element-overlay.view-mode.appliance-el .el-icon {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: rgba(11, 18, 32, 0.92);
+  border: 2.5px solid var(--appl-color);
+  color: var(--appl-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  filter: none;
+  opacity: 1;
+}
+.element-overlay.appliance-el .el-icon .el-svg,
+body.view-mode-active .element-overlay.view-mode.appliance-el .el-icon .el-svg { width: 58%; height: 58%; }
+body.view-mode-active .element-overlay.view-mode.appliance-el::after { display: none; }
+.element-overlay.appliance-el.running .el-icon,
+body.view-mode-active .element-overlay.view-mode.appliance-el.running .el-icon {
+  background: var(--appl-color);
+  color: #0b1220;
+  animation: appl-pulse 1.6s ease-in-out infinite;
+}
+.element-overlay.appliance-el.alert .el-icon,
+body.view-mode-active .element-overlay.view-mode.appliance-el.alert .el-icon {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .45);
+}
+.element-overlay.appliance-el.unavailable .el-icon { opacity: .55; border-style: dashed; }
+@keyframes appl-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, .35); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 255, 255, 0); }
+}
+
+/* Formulario: entidades por rol del electrodoméstico. */
+.appliance-group small { display: block; margin: 4px 0; }
+.appliance-group .btn { margin: 4px 0; }
+.appl-roles { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.appl-role-row { display: flex; flex-direction: column; gap: 2px; font-size: .78rem; color: var(--text-secondary); }
+.appl-role-row input { font-size: .8rem; }

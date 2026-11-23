@@ -1,43 +1,30 @@
-/* HADomotics — electrodomésticos en el plano de Dispositivos.
+/* HADomotics — electrodomésticos como elementos del plano de Dispositivos.
  *
- * - Los aparatos y sus entidades vienen de appliances_map.json
- *   (GET /api/appliances/map, con las posiciones movidas ya aplicadas).
- * - Cada aparato es un icono en su sitio del plano (fracciones de la imagen
- *   de la planta, como la presencia de Seguridad). En modo vista, al pulsarlo
- *   se abre su ventana con el estado y las acciones principales; en modo
- *   edición se arrastra y se guarda la posición (PUT /api/appliances/positions).
- * - Las acciones llaman a servicios reales de Home Assistant con la misma
- *   función que los demás controles (callAddonOrHass: hass.callService como el
- *   usuario dentro de HA). Nada se ejecuta sin que el usuario pulse.
+ * Nevera, lavavajillas y robot aspirador/friegasuelos son tipos de elemento
+ * (fridge, dishwasher, vacuum) que se añaden como cualquier otro: «+» en modo
+ * edición, clic en el plano, y en el panel se elige el tipo y la entidad
+ * principal. Las demás entidades del aparato (temperaturas, programa, batería…)
+ * se guardan por rol en el elemento (appliance_entities): se descubren en el
+ * mismo dispositivo de Home Assistant y se pueden cambiar a mano.
+ *
+ * Los tipos y sus roles vienen de appliance_types.json (GET /api/appliances/types);
+ * aquí no hay ningún entity_id fijo.
+ *
+ * En modo vista, al pulsar el elemento se abre su ventana con el estado y las
+ * acciones principales. Las acciones llaman a servicios reales de Home Assistant
+ * con la misma función que los demás controles (callAddonOrHass). Nada se
+ * ejecuta sin que el usuario pulse.
  */
 "use strict";
 
 (function () {
-  let mapData = { appliances: [], labels: {} };
+  let types = { kinds: {}, labels: {} };
   let loadPromise = null;
   let states = {};
-  let openId = null;
-  let ctx = { call: null, save: null, toast: null, confirm: null };
+  let openEl = null;
+  let ctx = { call: null, toast: null, confirm: null, fetchJson: null, hass: null };
   const busy = new Set();
   const errors = {};
-
-  const ICONS = {
-    fridge:
-      '<rect x="6" y="2.5" width="12" height="19" rx="2"/><line x1="6" y1="9.5" x2="18" y2="9.5"/>' +
-      '<line x1="9" y1="5" x2="9" y2="7.5"/><line x1="9" y1="12" x2="9" y2="16"/>',
-    dishwasher:
-      '<rect x="4" y="3" width="16" height="18" rx="2"/><line x1="4" y1="7.5" x2="20" y2="7.5"/>' +
-      '<circle cx="7.5" cy="5.25" r=".7"/><circle cx="10.5" cy="5.25" r=".7"/>' +
-      '<path d="M8 12.5c1.2-1 2.8-1 4 0s2.8 1 4 0"/><path d="M8 16.5c1.2-1 2.8-1 4 0s2.8 1 4 0"/>',
-    vacuum:
-      '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/>' +
-      '<path d="M5.6 7.6a8 8 0 0 1 12.8 0"/><circle cx="12" cy="5.4" r=".8"/>',
-  };
-
-  function iconSvg(kind) {
-    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
-      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[kind] || ICONS.fridge) + "</svg>";
-  }
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => (
@@ -51,31 +38,123 @@
 
   function load(force) {
     if (!loadPromise || force) {
-      loadPromise = fetch(panelRoot() + "/api/appliances/map", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : { appliances: [] }))
-        .catch(() => ({ appliances: [] }))
-        .then((j) => {
-          mapData = j && Array.isArray(j.appliances) ? j : { appliances: [], labels: {} };
-          return mapData;
-        });
+      loadPromise = fetch(panelRoot() + "/api/appliances/types", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : { kinds: {} }))
+        .catch(() => ({ kinds: {} }))
+        .then((j) => { setTypes(j); return types; });
     }
     return loadPromise;
   }
 
-  function setMap(m) { mapData = m && Array.isArray(m.appliances) ? m : { appliances: [], labels: {} }; }
-  function byId(id) { return mapData.appliances.find((a) => a.id === id) || null; }
-  function st(eid) { return (eid && states && states[eid]) || null; }
-  function isMissing(v) { return v == null || v === "" || v === "unavailable" || v === "unknown"; }
+  function setTypes(t) { types = t && t.kinds ? t : { kinds: {}, labels: {} }; }
+  function kind(type) { return (types.kinds || {})[type] || null; }
+  function isAppliance(type) { return !!kind(type); }
+  function kindList() { return Object.entries(types.kinds || {}).map(([id, k]) => ({ id, label: k.label, icon: k.icon })); }
+
+  // -------------------------------------------------------------------------
+  // Entidades del elemento
+  // -------------------------------------------------------------------------
+
+  /** {rol: entity_id} del elemento; el rol de la entidad principal sale de entity_id. */
+  function entitiesFor(el) {
+    const k = kind(el && el.type);
+    if (!k) return {};
+    const out = Object.assign({}, (el && el.appliance_entities) || {});
+    const main = String((el && el.entity_id) || "");
+    const dom = main.split(".")[0];
+    // Si un rol no está asignado y la entidad principal es de su dominio y le
+    // corresponde (p. ej. vacuum.* → rol «vacuum»), se usa la principal.
+    for (const [role, r] of Object.entries(k.roles || {})) {
+      if (out[role] || !main || r.domain !== dom) continue;
+      if (matchScore(r, { entity_id: main, translation_key: null }, states[main]) > 0 || role === k.main_role || k.main_domain === dom) {
+        out[role] = main;
+      }
+    }
+    return out;
+  }
+
+  function st(el, role) {
+    const eid = entitiesFor(el)[role];
+    return (eid && states && states[eid]) || null;
+  }
+  const isMissing = (v) => v == null || v === "" || v === "unavailable" || v === "unknown";
+
+  // -------------------------------------------------------------------------
+  // Descubrimiento por dispositivo
+  // -------------------------------------------------------------------------
+
+  /** Puntuación de una entidad candidata para un rol (0 = no vale). */
+  function matchScore(r, cand, stateObj) {
+    const eid = String(cand.entity_id || "");
+    const [dom, obj] = eid.split(".");
+    if (!obj || dom !== r.domain) return 0;
+    if (!r.keys && !r.device_class && !r.suffix) return 1;
+    if (cand.translation_key && (r.keys || []).includes(cand.translation_key)) return 4;
+    const dc = stateObj && stateObj.attributes && stateObj.attributes.device_class;
+    if (dc && (r.device_class || []).includes(dc)) return 3;
+    if ((r.suffix || []).some((sfx) => obj.endsWith(sfx.replace(/^_/, "")) && (sfx[0] !== "_" || obj.endsWith(sfx)))) return 2;
+    return 0;
+  }
+
+  /** {rol: entity_id} a partir de las entidades del aparato. */
+  function matchRoles(type, candidates, stateMap) {
+    const k = kind(type);
+    if (!k) return {};
+    const sm = stateMap || states;
+    const out = {};
+    for (const [role, r] of Object.entries(k.roles || {})) {
+      let best = null, bestScore = 0;
+      for (const c of candidates || []) {
+        const sc = matchScore(r, c, sm[c.entity_id]);
+        if (sc > bestScore) { best = c.entity_id; bestScore = sc; }
+      }
+      if (best) out[role] = best;
+    }
+    return out;
+  }
+
+  /** Entidades del mismo aparato: dentro de HA con hass.entities/devices; fuera, el add-on. */
+  async function deviceCandidates(mainEntity) {
+    const hass = ctx.hass ? ctx.hass() : null;
+    if (hass && hass.entities && hass.devices) {
+      const ents = Object.values(hass.entities);
+      const main = hass.entities[mainEntity];
+      if (!main || !main.device_id) return [];
+      const dev = hass.devices[main.device_id] || {};
+      const name = String(dev.name_by_user || dev.name || "").trim().toLowerCase();
+      const ids = new Set([main.device_id]);
+      for (const d of Object.values(hass.devices)) {
+        const dn = String(d.name_by_user || d.name || "").trim().toLowerCase();
+        const sameEntry = (d.config_entries || []).some((c) => (dev.config_entries || []).includes(c));
+        if (d.via_device_id === main.device_id || (name && dn.startsWith(name) && sameEntry)) ids.add(d.id);
+      }
+      return ents.filter((e) => ids.has(e.device_id))
+        .map((e) => ({ entity_id: e.entity_id, translation_key: e.translation_key || null, device_id: e.device_id }));
+    }
+    if (!ctx.fetchJson) return [];
+    const j = await ctx.fetchJson(`/api/ha/device_entities?entity_id=${encodeURIComponent(mainEntity)}`);
+    return (j && j.entities) || [];
+  }
+
+  async function discover(type, mainEntity) {
+    const cands = await deviceCandidates(mainEntity);
+    if (!cands.some((c) => c.entity_id === mainEntity)) cands.push({ entity_id: mainEntity });
+    return { roles: matchRoles(type, cands, states), found: cands.length };
+  }
+
+  // -------------------------------------------------------------------------
+  // Textos
+  // -------------------------------------------------------------------------
 
   function labelsFor(item) {
     const l = item && item.labels;
     if (!l) return null;
-    if (typeof l === "string") return (mapData.labels || {})[l] || null;
+    if (typeof l === "string") return (types.labels || {})[l] || null;
     return l;
   }
 
-  function rawValue(item) {
-    const s = st(item.entity);
+  function rawValue(el, item) {
+    const s = st(el, item.role);
     if (!s) return null;
     if (item.attribute) return s.attributes ? s.attributes[item.attribute] : null;
     return s.state;
@@ -95,106 +174,116 @@
     const h = Math.floor(min / 60), m = min % 60;
     const left = h ? `${h} h ${String(m).padStart(2, "0")} min` : `${m} min`;
     let at = "";
-    try {
-      at = new Date(t).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
-    } catch (e) { at = ""; }
+    try { at = new Date(t).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }); } catch (e) { at = ""; }
     return at ? `${left} (fin ${at})` : left;
   }
 
-  /** Texto legible de un valor (estado o atributo) según el formato del mapa. */
-  function formatValue(item, now) {
-    const v = rawValue(item);
+  function prettyOption(v) {
+    return String(v).replace(/^.*_program_/, "").replace(/_/g, " ");
+  }
+
+  function formatValue(el, item, now) {
+    const v = rawValue(el, item);
     if (v == null || v === "unavailable") return "No disponible";
     if (v === "unknown" || v === "") {
       const l = labelsFor(item);
       return l && l.unknown ? l.unknown : "—";
     }
-    const s = st(item.entity);
+    const s = st(el, item.role);
     const unit = (s && s.attributes && s.attributes.unit_of_measurement) || "";
     if (item.format === "temp") return `${fmtNumber(v)} ${unit || "°C"}`;
     if (item.format === "value") return unit ? `${fmtNumber(v)} ${unit}` : fmtNumber(v);
     if (item.format === "remaining") return remaining(v, now) || "—";
     const l = labelsFor(item);
     if (l && Object.prototype.hasOwnProperty.call(l, v)) return l[v];
+    if (item.labels === "dishwasher_program") return prettyOption(v);
     return String(v);
   }
 
-  function badgeText(a, now) {
-    return (a.badge || [])
+  function badgeText(el, now) {
+    const k = kind(el && el.type);
+    if (!k) return "";
+    return (k.badge || [])
       .map((b) => {
-        const v = rawValue(b);
+        const v = rawValue(el, b);
         if (isMissing(v)) return "";
-        if (b.format === "remaining") return remaining(v, now) ? remaining(v, now).replace(/ \(fin .*\)$/, "") : "";
-        return formatValue(b, now);
+        if (b.format === "remaining") { const r = remaining(v, now); return r ? r.replace(/ \(fin .*\)$/, "") : ""; }
+        return formatValue(el, b, now);
       })
       .filter(Boolean)
       .join(" · ");
   }
 
-  function alertMatches(rule) {
-    const s = st(rule.entity);
+  function alertMatches(el, rule) {
+    const s = st(el, rule.role);
     if (!s) return false;
     if (Array.isArray(rule.when)) return rule.when.includes(s.state);
     if (Array.isArray(rule.not)) return !rule.not.includes(s.state);
     return false;
   }
 
-  function activeAlerts(a) { return (a.alerts || []).filter(alertMatches).map((r) => r.text); }
+  function activeAlerts(el) {
+    const k = kind(el && el.type);
+    return k ? (k.alerts || []).filter((r) => alertMatches(el, r)).map((r) => r.text) : [];
+  }
 
-  function isRunning(a) {
-    const r = a.running;
-    const s = r && st(r.entity);
+  function isRunning(el) {
+    const k = kind(el && el.type);
+    const r = k && k.running;
+    const s = r && st(el, r.role);
     return !!(s && (r.when || []).includes(s.state));
   }
 
-  function isUnavailable(a) {
-    const s = st(a.main);
+  function isUnavailable(el) {
+    const s = el && el.entity_id ? states[el.entity_id] : null;
     return !s || s.state === "unavailable";
   }
 
-  /** ¿Se puede pulsar la acción ahora? Devuelve { ok, reason }. */
-  function actionState(act) {
-    const target = st(act.entity);
+  /** Clases del elemento en el plano: en marcha, alarma, no disponible. */
+  function stateClasses(el) {
+    return [isRunning(el) ? "running" : "", activeAlerts(el).length ? "alert" : "", isUnavailable(el) ? "unavailable" : ""]
+      .filter(Boolean);
+  }
+
+  // -------------------------------------------------------------------------
+  // Acciones
+  // -------------------------------------------------------------------------
+
+  function actionState(el, act) {
+    const target = st(el, act.role);
     if (!target || target.state === "unavailable") return { ok: false, reason: "No disponible" };
     for (const c of act.enabled_when || []) {
-      const s = st(c.entity);
+      const s = st(el, c.role);
       if (!s || !(c.in || []).includes(s.state)) return { ok: false, reason: "" };
     }
     if (act.option_from) {
-      const src = st(act.option_from);
+      const src = st(el, act.option_from);
       const opts = (target.attributes && target.attributes.options) || [];
       if (!src || isMissing(src.state) || !opts.includes(src.state)) return { ok: false, reason: "Elige un programa" };
     }
     return { ok: true, reason: "" };
   }
 
-  /** (dominio, servicio, datos) que manda una acción del mapa. */
-  function buildActionCall(act) {
-    const data = { entity_id: act.entity };
+  function buildActionCall(el, act) {
+    const ents = entitiesFor(el);
+    const data = { entity_id: ents[act.role] };
     if (act.option_from) {
-      const src = st(act.option_from);
+      const src = st(el, act.option_from);
       data.option = src ? src.state : null;
     }
     return { domain: act.domain, service: act.service, data };
   }
 
-  function buildControlCall(ctrl, value) {
-    if (ctrl.type === "switch") {
-      return { domain: "switch", service: value ? "turn_on" : "turn_off", data: { entity_id: ctrl.entity } };
-    }
-    if (ctrl.type === "number") {
-      return { domain: "number", service: "set_value", data: { entity_id: ctrl.entity, value } };
-    }
-    if (ctrl.type === "select") {
-      return { domain: "select", service: "select_option", data: { entity_id: ctrl.entity, option: value } };
-    }
-    if (ctrl.type === "fan_speed") {
-      return { domain: "vacuum", service: "set_fan_speed", data: { entity_id: ctrl.entity, fan_speed: value } };
-    }
+  function buildControlCall(el, ctrl, value) {
+    const eid = entitiesFor(el)[ctrl.role];
+    if (!eid) return null;
+    if (ctrl.type === "switch") return { domain: "switch", service: value ? "turn_on" : "turn_off", data: { entity_id: eid } };
+    if (ctrl.type === "number") return { domain: "number", service: "set_value", data: { entity_id: eid, value } };
+    if (ctrl.type === "select") return { domain: "select", service: "select_option", data: { entity_id: eid, option: value } };
+    if (ctrl.type === "fan_speed") return { domain: "vacuum", service: "set_fan_speed", data: { entity_id: eid, fan_speed: value } };
     return null;
   }
 
-  /** Valor siguiente de un number dentro de sus límites (min/max/step de HA). */
   function stepNumber(s, dir) {
     const a = (s && s.attributes) || {};
     const step = Number(a.step) || 1;
@@ -208,128 +297,14 @@
   }
 
   // -------------------------------------------------------------------------
-  // Marcadores en el plano
-  // -------------------------------------------------------------------------
-
-  function floorKey(floor, floors) {
-    const HP = window.HADomoticsPlan;
-    const cfg = HP && HP.configFor ? HP.configFor(floor, floors) : null;
-    return cfg ? cfg.key : null;
-  }
-
-  function markerClass(a) {
-    return "appliance-marker appliance-" + a.kind +
-      (isRunning(a) ? " running" : "") +
-      (activeAlerts(a).length ? " alert" : "") +
-      (isUnavailable(a) ? " unavailable" : "");
-  }
-
-  /**
-   * Dibuja los aparatos de esta planta. opts: { viewMode, crop, onMoved }.
-   */
-  function render(container, floor, floors, width, height, opts) {
-    if (!container) return [];
-    container.querySelectorAll(":scope > .appliance-marker").forEach((e) => e.remove());
-    const key = floorKey(floor, floors);
-    if (!key || !width || !height) return [];
-    const o = opts || {};
-    const out = [];
-    mapData.appliances.filter((a) => a.floor === key && Array.isArray(a.position)).forEach((a) => {
-      let px = Number(a.position[0]) * width, py = Number(a.position[1]) * height;
-      const HP = window.HADomoticsPlan;
-      if (o.viewMode && o.crop && HP && HP.clampPoint) [px, py] = HP.clampPoint(px, py, o.crop, 20);
-      const m = document.createElement("div");
-      m.className = markerClass(a) + (o.viewMode ? "" : " editing");
-      m.dataset.appliance = a.id;
-      m.style.left = `${px}px`;
-      m.style.top = `${py}px`;
-      m.title = a.name + (o.viewMode ? "" : " — arrastra para moverlo");
-      m.setAttribute("role", "button");
-      m.setAttribute("tabindex", "0");
-      m.setAttribute("aria-label", a.name);
-      m.innerHTML = `<div class="appl-inner"><div class="appl-icon">${iconSvg(a.kind)}</div>` +
-        `<div class="appl-badge">${esc(badgeText(a))}</div></div>`;
-      if (o.viewMode) {
-        m.addEventListener("click", (ev) => { ev.stopPropagation(); open(a.id); });
-        m.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(a.id); } });
-      } else {
-        m.addEventListener("click", (ev) => ev.stopPropagation());
-        enableDrag(m, a, key, width, height, o.onMoved);
-      }
-      container.appendChild(m);
-      out.push(m);
-    });
-    return out;
-  }
-
-  function enableDrag(m, a, key, width, height, onMoved) {
-    m.addEventListener("pointerdown", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      const container = m.parentElement;
-      const rect = container.getBoundingClientRect();
-      const scale = rect.width / (container.offsetWidth || width) || 1;
-      const startX = ev.clientX, startY = ev.clientY;
-      const x0 = parseFloat(m.style.left), y0 = parseFloat(m.style.top);
-      let moved = false;
-      if (m.setPointerCapture) { try { m.setPointerCapture(ev.pointerId); } catch (e) { /* sin captura */ } }
-      const move = (e) => {
-        const dx = (e.clientX - startX) / scale, dy = (e.clientY - startY) / scale;
-        if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
-        m.style.left = `${x0 + dx}px`;
-        m.style.top = `${y0 + dy}px`;
-      };
-      const up = () => {
-        m.removeEventListener("pointermove", move);
-        m.removeEventListener("pointerup", up);
-        m.removeEventListener("pointercancel", up);
-        if (!moved) return;
-        const fx = parseFloat(m.style.left) / width, fy = parseFloat(m.style.top) / height;
-        savePosition(a, key, fx, fy).then(() => { if (onMoved) onMoved(a); });
-      };
-      m.addEventListener("pointermove", move);
-      m.addEventListener("pointerup", up);
-      m.addEventListener("pointercancel", up);
-    });
-  }
-
-  async function savePosition(a, key, fx, fy) {
-    const x = Math.min(2, Math.max(-1, Number(fx.toFixed(5))));
-    const y = Math.min(2, Math.max(-1, Number(fy.toFixed(5))));
-    try {
-      if (!ctx.save) throw new Error("no save");
-      await ctx.save({ id: a.id, floor: key, x, y });
-      a.floor = key;
-      a.position = [x, y];
-      a.custom = true;
-      notify(`${a.name}: posición guardada`, "success");
-    } catch (e) {
-      notify(`No se pudo guardar la posición de ${a.name}`, "error");
-    }
-  }
-
-  function notify(msg, type) { if (ctx.toast) ctx.toast(msg, type); }
-
-  /** Estados nuevos: actualiza los marcadores y la ventana abierta. */
-  function update(container, newStates) {
-    states = newStates || {};
-    if (container) {
-      container.querySelectorAll(":scope > .appliance-marker").forEach((m) => {
-        const a = byId(m.dataset.appliance);
-        if (!a) return;
-        const editing = m.classList.contains("editing");
-        m.className = markerClass(a) + (editing ? " editing" : "");
-        const b = m.querySelector(".appl-badge");
-        const txt = badgeText(a);
-        if (b && b.textContent !== txt) b.textContent = txt;
-      });
-    }
-    if (openId) renderSheet(false);
-  }
-
-  // -------------------------------------------------------------------------
   // Ventana del aparato
   // -------------------------------------------------------------------------
+
+  function iconSvg(type) {
+    const k = kind(type);
+    const I = window.HADomoticsIcons;
+    return I ? I.svg((k && k.icon) || "generico", {}) : "";
+  }
 
   function ensureModal() {
     let ov = document.getElementById("applianceModal");
@@ -344,25 +319,30 @@
     return ov;
   }
 
-  function open(id) {
-    if (!byId(id)) return;
-    openId = id;
+  function open(el) {
+    if (!el || !kind(el.type)) return;
+    openEl = el;
     const ov = ensureModal();
     ov.style.display = "flex";
     renderSheet(true);
   }
 
   function close() {
-    openId = null;
+    openEl = null;
     const ov = document.getElementById("applianceModal");
     if (ov) ov.style.display = "none";
   }
 
-  function controlHtml(c, i) {
-    const s = st(c.entity);
+  function update(newStates) {
+    states = newStates || {};
+    if (openEl) renderSheet(false);
+  }
+
+  function controlHtml(el, c, i) {
+    const s = st(el, c.role);
+    if (!entitiesFor(el)[c.role]) return "";
     const off = !s || s.state === "unavailable";
-    const key = `c:${c.entity}`;
-    const dis = off || busy.has(key) ? " disabled" : "";
+    const dis = off || busy.has(`c:${el.id}:${c.role}`) ? " disabled" : "";
     if (c.type === "switch") {
       const on = s && s.state === "on";
       return `<div class="appl-row appl-control"><span class="appl-label">${esc(c.label)}</span>` +
@@ -371,8 +351,7 @@
     }
     if (c.type === "number") {
       const a = (s && s.attributes) || {};
-      const unit = a.unit_of_measurement || "";
-      const val = off || isMissing(s && s.state) ? "—" : `${fmtNumber(s.state)} ${unit}`;
+      const val = off || isMissing(s && s.state) ? "—" : `${fmtNumber(s.state)} ${a.unit_of_measurement || ""}`;
       const minus = stepNumber(s, -1) == null ? " disabled" : dis;
       const plus = stepNumber(s, 1) == null ? " disabled" : dis;
       return `<div class="appl-row appl-control"><span class="appl-label">${esc(c.label)}</span>` +
@@ -386,9 +365,8 @@
         : ((s && s.attributes && s.attributes.fan_speed_list) || []);
       const cur = c.type === "select" ? (s && s.state) : (s && s.attributes && s.attributes.fan_speed);
       const l = labelsFor(c) || {};
-      const has = opts.includes(cur);
-      const options = (has ? "" : '<option value="" selected>—</option>') +
-        opts.map((o) => `<option value="${esc(o)}"${o === cur ? " selected" : ""}>${esc(l[o] || o)}</option>`).join("");
+      const options = (opts.includes(cur) ? "" : '<option value="" selected>—</option>') +
+        opts.map((o) => `<option value="${esc(o)}"${o === cur ? " selected" : ""}>${esc(l[o] || (c.labels === "dishwasher_program" ? prettyOption(o) : o))}</option>`).join("");
       return `<div class="appl-row appl-control"><span class="appl-label">${esc(c.label)}</span>` +
         `<select class="appl-select" data-control="${i}"${dis || (opts.length ? "" : " disabled")}>${options}</select></div>`;
     }
@@ -396,119 +374,114 @@
   }
 
   function renderSheet(force) {
-    const a = byId(openId);
+    const el = openEl;
+    const k = kind(el && el.type);
     const ov = document.getElementById("applianceModal");
-    if (!a || !ov) return;
+    if (!k || !ov) return;
     const box = ov.querySelector(".appliance-modal");
-    // No rehacer mientras se elige en un desplegable.
     if (!force && document.activeElement && box.contains(document.activeElement) &&
         document.activeElement.tagName === "SELECT") return;
-
-    const alerts = activeAlerts(a);
-    const status = (a.status || []).map((it) => {
-      const v = rawValue(it);
+    const ents = entitiesFor(el);
+    const alerts = activeAlerts(el);
+    const status = (k.status || []).filter((it) => ents[it.role]).map((it) => {
+      const v = rawValue(el, it);
       const bad = (Array.isArray(it.alert) && it.alert.includes(v)) ||
         (Array.isArray(it.alert_not) && v != null && !it.alert_not.includes(v));
       return `<div class="appl-row${bad ? " bad" : ""}"><span class="appl-label">${esc(it.label)}</span>` +
-        `<span class="appl-value">${esc(formatValue(it))}</span></div>`;
+        `<span class="appl-value">${esc(formatValue(el, it))}</span></div>`;
     }).join("");
-    const actions = (a.actions || []).map((act, i) => {
-      const s = actionState(act);
-      const dis = !s.ok || busy.has(`a:${a.id}:${act.id}`) ? " disabled" : "";
+    const actions = (k.actions || []).filter((a) => ents[a.role]).map((act) => {
+      const s = actionState(el, act);
+      const i = k.actions.indexOf(act);
+      const dis = !s.ok || busy.has(`a:${el.id}:${act.id}`) ? " disabled" : "";
       return `<button type="button" class="btn appl-action appl-action-${esc(act.id)}" data-action="${i}"${dis}` +
         `${s.reason ? ` title="${esc(s.reason)}"` : ""}><span class="material-icons">${esc(act.icon || "play_arrow")}</span>${esc(act.label)}</button>`;
     }).join("");
-    const controls = (a.controls || []).map(controlHtml).join("");
-    const notes = (a.notes || []).map((n) => `<p class="appl-note">${esc(n)}</p>`).join("");
-    const err = errors[a.id] ? `<p class="appl-error">${esc(errors[a.id])}</p>` : "";
+    const controls = (k.controls || []).map((c, i) => controlHtml(el, c, i)).join("");
+    const notes = (k.notes || []).map((n) => `<p class="appl-note">${esc(n)}</p>`).join("");
+    const err = errors[el.id] ? `<p class="appl-error">${esc(errors[el.id])}</p>` : "";
+    const name = el.label || (states[el.entity_id] && states[el.entity_id].attributes && states[el.entity_id].attributes.friendly_name) || k.label;
+    const empty = !status && !actions && !controls
+      ? '<p class="appl-note">Este elemento no tiene entidades asignadas. En modo edición, elige su entidad principal y pulsa «Detectar entidades».</p>' : "";
 
     box.innerHTML =
-      `<div class="appl-head"><div class="appl-head-icon appliance-${esc(a.kind)}${isRunning(a) ? " running" : ""}">${iconSvg(a.kind)}</div>` +
-      `<div class="appl-head-text"><h2 id="applianceTitle">${esc(a.name)}</h2><div class="appl-sub">${esc(a.model || "")}</div></div>` +
+      `<div class="appl-head"><div class="appl-head-icon appliance-${esc(el.type)}${isRunning(el) ? " running" : ""}">${iconSvg(el.type)}</div>` +
+      `<div class="appl-head-text"><h2 id="applianceTitle">${esc(name)}</h2><div class="appl-sub">${esc(k.label)}</div></div>` +
       `<button type="button" class="appl-close" aria-label="Cerrar"><span class="material-icons">close</span></button></div>` +
       (alerts.length ? `<div class="appl-alerts">${alerts.map((t) => `<div class="appl-alert"><span class="material-icons">warning</span>${esc(t)}</div>`).join("")}</div>` : "") +
-      (actions ? `<div class="appl-actions">${actions}</div>` : "") +
-      err +
-      `<div class="appl-section">${status}</div>` +
-      (controls ? `<div class="appl-section appl-controls">${controls}</div>` : "") +
-      notes +
-      `<div class="appl-where"><span class="material-icons">place</span>${esc((a.location && a.location.note) || "")}</div>`;
+      (actions ? `<div class="appl-actions">${actions}</div>` : "") + err +
+      (status ? `<div class="appl-section">${status}</div>` : "") +
+      (controls ? `<div class="appl-section appl-controls">${controls}</div>` : "") + notes + empty;
 
     box.querySelector(".appl-close").addEventListener("click", close);
     box.querySelectorAll("[data-action]").forEach((b) => {
-      b.addEventListener("click", () => runAction(a, a.actions[Number(b.dataset.action)]));
+      b.addEventListener("click", () => runAction(el, k.actions[Number(b.dataset.action)]));
     });
     box.querySelectorAll("button[data-control]").forEach((b) => {
       b.addEventListener("click", () => {
-        const c = a.controls[Number(b.dataset.control)];
+        const c = k.controls[Number(b.dataset.control)];
         if (c.type === "switch") {
-          const s = st(c.entity);
-          runControl(a, c, !(s && s.state === "on"));
+          const s = st(el, c.role);
+          runControl(el, c, !(s && s.state === "on"));
         } else if (c.type === "number") {
-          const v = stepNumber(st(c.entity), Number(b.dataset.dir));
-          if (v != null) runControl(a, c, v);
+          const v = stepNumber(st(el, c.role), Number(b.dataset.dir));
+          if (v != null) runControl(el, c, v);
         }
       });
     });
     box.querySelectorAll("select[data-control]").forEach((sel) => {
-      sel.addEventListener("change", () => {
-        if (sel.value) runControl(a, a.controls[Number(sel.dataset.control)], sel.value);
-      });
+      sel.addEventListener("change", () => { if (sel.value) runControl(el, k.controls[Number(sel.dataset.control)], sel.value); });
     });
   }
 
-  async function invoke(a, key, call) {
-    if (!ctx.call || !call) return false;
+  async function invoke(el, key, call) {
+    if (!ctx.call || !call || !call.data.entity_id) return false;
     busy.add(key);
-    delete errors[a.id];
-    renderSheet(true);
+    delete errors[el.id];
+    if (openEl) renderSheet(true);
     try {
       await ctx.call(call.domain, call.service, call.data);
       return true;
     } catch (e) {
-      errors[a.id] = "Home Assistant no aceptó la orden. Inténtalo de nuevo.";
+      errors[el.id] = "Home Assistant no aceptó la orden. Inténtalo de nuevo.";
       return false;
     } finally {
       busy.delete(key);
-      if (openId === a.id) renderSheet(true);
+      if (openEl && openEl.id === el.id) renderSheet(true);
     }
   }
 
-  async function runAction(a, act) {
-    if (!act || !actionState(act).ok) return false;
-    const call = buildActionCall(act);
+  async function runAction(el, act) {
+    if (!act || !actionState(el, act).ok) return false;
+    const call = buildActionCall(el, act);
     if (act.confirm) {
       const l = labelsFor({ labels: act.option_labels }) || {};
-      const opt = call.data.option ? (l[call.data.option] || call.data.option) : "";
+      const opt = call.data.option ? (l[call.data.option] || prettyOption(call.data.option)) : "";
       const ask = act.confirm.replace("{option}", opt);
       const ok = ctx.confirm ? ctx.confirm(ask) : window.confirm(ask);
       if (!ok) return false;
     }
-    return invoke(a, `a:${a.id}:${act.id}`, call);
+    return invoke(el, `a:${el.id}:${act.id}`, call);
   }
 
-  function runControl(a, c, value) {
-    return invoke(a, `c:${c.entity}`, buildControlCall(c, value));
+  function runControl(el, c, value) {
+    return invoke(el, `c:${el.id}:${c.role}`, buildControlCall(el, c, value));
   }
 
-  /** call(domain, service, data), save({id, floor, x, y}), toast(msg, type). */
+  /** call(domain, service, data), toast, confirm, fetchJson(path), hass() */
   function configure(o) { ctx = Object.assign(ctx, o || {}); }
 
   if (typeof document !== "undefined" && document.addEventListener) {
-    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && openId) close(); });
+    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && openEl) close(); });
   }
 
   window.HADomoticsAppliances = {
-    load,
-    configure,
-    render,
-    update,
-    open,
-    close,
+    load, configure, isAppliance, kind, kindList, entitiesFor, discover, matchRoles,
+    badgeText, stateClasses, update, open, close, iconSvg,
     _internals: {
-      setMap, setStates: (s) => { states = s || {}; }, formatValue, badgeText, activeAlerts, isRunning,
-      actionState, buildActionCall, buildControlCall, stepNumber, runAction, runControl, remaining,
-      get openId() { return openId; },
+      setTypes, setStates: (s) => { states = s || {}; }, formatValue, activeAlerts, isRunning, actionState,
+      buildActionCall, buildControlCall, stepNumber, runAction, runControl, remaining, matchScore,
+      get openEl() { return openEl; },
     },
   };
 })();

@@ -131,6 +131,10 @@ function updateActionFields() {
   const svcGroup = $("serviceGroup");
   const dataGroup = $("serviceDataGroup");
 
+  if (HA_APPL() && HA_APPL().isAppliance($("propType").value)) {
+    [posGroup, svcGroup, dataGroup].forEach((g) => { if (g) g.style.display = "none"; });
+    return;
+  }
   if (posGroup) posGroup.style.display = (action === "set_position") ? "block" : "none";
   if (svcGroup) svcGroup.style.display = (action === "call-service") ? "block" : "none";
   if (dataGroup) dataGroup.style.display = (action === "call-service") ? "block" : "none";
@@ -143,6 +147,8 @@ function openElementProps(el) {
   $("propType").value = el.type || "button";
   $("propEntityId").value = el.entity_id || "";
   $("propIcon").value = el.icon || "";
+  if ($("propSvgIcon")) $("propSvgIcon").value = el.svg_icon || "auto";
+  applianceFormFor(el);
   $("propColorOn").value = el.color_on || "#4CAF50";
   $("propColorOff").value = el.color_off || "#9E9E9E";
   $("propTapAction").value = el.tap_action || "toggle";
@@ -160,6 +166,104 @@ function openElementProps(el) {
   $("propTapAction").onchange = updateActionFields;
 }
 
+// ---------------------------------------------------------------------------
+// Electrodomésticos en el formulario: entidad principal + entidades por rol
+// ---------------------------------------------------------------------------
+
+let formStates = null;
+/** Estados para las listas del formulario (en edición no hay sondeo en vivo). */
+async function statesForForm() {
+  const hass = embeddedHass();
+  if (hass && hass.states) return hass.states;
+  if (Object.keys(entityStates).length) return entityStates;
+  if (formStates) return formStates;
+  try {
+    const list = await apiFetch("/api/ha/states");
+    formStates = {};
+    list.forEach((s) => { formStates[s.entity_id] = s; });
+  } catch (err) {
+    formStates = {};
+  }
+  return formStates;
+}
+
+function fillEntityDatalist(id, statesMap, domain) {
+  let dl = document.getElementById(id);
+  if (!dl) {
+    dl = document.createElement("datalist");
+    dl.id = id;
+    document.body.appendChild(dl);
+  }
+  const ids = Object.keys(statesMap || {}).filter((e) => !domain || e.startsWith(`${domain}.`)).sort();
+  dl.innerHTML = ids.map((e) => `<option value="${escapeHtml(e)}"></option>`).join("");
+}
+
+/** Muestra u oculta el bloque de electrodoméstico según el tipo elegido. */
+function applianceFormFor(el) {
+  const group = $("applianceGroup");
+  if (!group) return;
+  const type = $("propType").value;
+  const HA = HA_APPL();
+  const k = HA ? HA.kind(type) : null;
+  group.style.display = k ? "block" : "none";
+  document.querySelectorAll(".non-appliance-only").forEach((g) => { g.style.display = k ? "none" : ""; });
+  if (!k) {
+    updateActionFields();
+    return;
+  }
+  ["positionGroup", "serviceGroup", "serviceDataGroup"].forEach((id) => { if ($(id)) $(id).style.display = "none"; });
+  $("applianceHint").textContent = k.main_hint || "";
+  const current = (el && el.type === type && el.appliance_entities) || {};
+  renderApplianceRoles(type, current);
+  statesForForm().then((sm) => {
+    fillEntityDatalist("entityOptions", sm, null);
+    for (const r of Object.values(k.roles || {})) fillEntityDatalist(`entityOptions-${r.domain}`, sm, r.domain);
+  });
+}
+
+function renderApplianceRoles(type, values) {
+  const HA = HA_APPL();
+  const k = HA ? HA.kind(type) : null;
+  const box = $("applianceRoles");
+  if (!k || !box) return;
+  box.innerHTML = Object.entries(k.roles || {}).map(([role, r]) => `
+    <label class="appl-role-row">
+      <span>${escapeHtml(r.label || role)}</span>
+      <input type="text" data-role="${escapeHtml(role)}" list="entityOptions-${escapeHtml(r.domain)}"
+             placeholder="${escapeHtml(r.domain)}.…" value="${escapeHtml(values[role] || "")}" />
+    </label>`).join("");
+}
+
+function readApplianceRoles() {
+  const out = {};
+  document.querySelectorAll("#applianceRoles input[data-role]").forEach((inp) => {
+    const v = inp.value.trim();
+    if (v) out[inp.dataset.role] = v;
+  });
+  return out;
+}
+
+async function detectApplianceEntities() {
+  const HA = HA_APPL();
+  const type = $("propType").value;
+  const main = $("propEntityId").value.trim();
+  if (!HA || !HA.isAppliance(type)) return;
+  if (!main) {
+    toast("Elige primero la entidad principal del aparato", "warn");
+    return;
+  }
+  try {
+    await statesForForm();
+    const res = await HA.discover(type, main);
+    const merged = Object.assign(readApplianceRoles(), res.roles);
+    renderApplianceRoles(type, merged);
+    const n = Object.keys(res.roles).length;
+    toast(n ? `${n} entidades encontradas en el mismo dispositivo` : "No se encontraron entidades del aparato: asígnalas a mano", n ? "success" : "warn");
+  } catch (err) {
+    toast(`No se pudieron leer las entidades del dispositivo: ${err.message}`, "error");
+  }
+}
+
 function saveElementProps(e) {
   e.preventDefault();
   if (!currentElement || !currentFloor) return;
@@ -169,6 +273,7 @@ function saveElementProps(e) {
     type: $("propType").value,
     entity_id: $("propEntityId").value.trim(),
     icon: $("propIcon").value.trim(),
+    svg_icon: $("propSvgIcon") ? $("propSvgIcon").value : "auto",
     color_on: $("propColorOn").value,
     color_off: $("propColorOff").value,
     tap_action: $("propTapAction").value,
@@ -180,6 +285,8 @@ function saveElementProps(e) {
     service_data: $("propServiceData")?.value?.trim() || "",
     state_position: $("propStatePosition")?.value || "bottom",
   };
+
+  if (isApplianceEl(data)) data.appliance_entities = readApplianceRoles();
 
   apiFetch(`/api/floors/${currentFloor.id}/elements/${currentElement.id}`, {
     method: "PUT",
@@ -240,6 +347,29 @@ async function applyBulkColors(scope) {
 // ---------------------------------------------------------------------------
 // Floor list rendering
 // ---------------------------------------------------------------------------
+
+/** Icono SVG del elemento (element_icons.js), con su estado actual. */
+function elementIconSvg(el) {
+  const I = window.HADomoticsIcons;
+  if (!I) return "";
+  return I.forElement(el, el && el.entity_id ? entityStates[el.entity_id] : null);
+}
+
+const HA_APPL = () => window.HADomoticsAppliances;
+function isApplianceEl(el) {
+  return !!(el && HA_APPL() && HA_APPL().isAppliance(el.type));
+}
+
+/** Clases de estado del elemento: el-on / el-off / el-unavailable y, en
+ *  electrodomésticos, running / alert. */
+function elementStateClasses(el) {
+  const I = window.HADomoticsIcons;
+  const out = [];
+  const sc = I ? I.stateClass(el, el && el.entity_id ? entityStates[el.entity_id] : null) : "";
+  if (sc) out.push(`el-${sc}`);
+  if (isApplianceEl(el)) out.push(...HA_APPL().stateClasses(el));
+  return out;
+}
 
 function typeIcon(type) {
   const map = {
@@ -330,7 +460,7 @@ function renderElementList(elements) {
     li.dataset.id = el.id;
     if (currentElement && currentElement.id === el.id) li.classList.add("active");
     li.innerHTML = `
-      <span class="material-icons">${typeIcon(el.type)}</span>
+      <span class="el-list-icon">${elementIconSvg(el)}</span>
       <span>${escapeHtml(el.label || el.entity_id || "Unnamed")}</span>
       <span class="item-actions">
         <button class="icon-btn btn-delete-el" data-id="${el.id}" title="Delete">
@@ -401,6 +531,7 @@ function renderFloorCanvas(floor) {
 
 /** Returns a short display string for sensor / climate / cover state */
 function _getElementStateText(el) {
+  if (isApplianceEl(el)) return HA_APPL().badgeText(el);
   if ((el.type === "button" || el.type === "custom") && (!el.entity_id || !entityStates[el.entity_id])) {
     return _labelWithOnOff(el, null);
   }
@@ -448,6 +579,8 @@ function _labelWithOnOff(el, s) {
 
 function renderElements(elements) {
   const cc = $("canvasContainer");
+  // Los electrodomésticos leen su propio estado: dárselo antes de pintar.
+  if (window.HADomoticsAppliances) window.HADomoticsAppliances.update(entityStates);
   cc.querySelectorAll(".element-overlay").forEach((e) => e.remove());
 
   cc.classList.toggle("view-mode", viewMode);
@@ -459,7 +592,9 @@ function renderElements(elements) {
     
 
     div.className = "element-overlay" + (viewMode ? " view-mode" : "") +
-      (statePos !== "none" ? ` state-pos-${statePos}` : "");
+      (statePos !== "none" ? ` state-pos-${statePos}` : "") +
+      (isApplianceEl(el) ? ` appliance-el appliance-${el.type}` : "");
+    elementStateClasses(el).forEach((c) => div.classList.add(c));
     div.dataset.id = el.id;
 
     const rotation = parseFloat(el.rotation) || 0;
@@ -475,6 +610,7 @@ function renderElements(elements) {
     div.style.width = `${el.width}px`;
     div.style.height = `${el.height}px`;
     div.style.background = _getElementBackground(el);
+    div.style.setProperty("--el-fg", _iconColorFor(_getElementBackground(el)));
     div.style.transform = `rotate(${rotation}deg)`;
     div.style.transformOrigin = "center center";
     div.style.position = "absolute";
@@ -484,7 +620,7 @@ function renderElements(elements) {
     }
 
     div.innerHTML = `
-      <span class="material-icons el-icon">${typeIcon(el.type)}</span>
+      <span class="el-icon"${rotation && !isApplianceEl(el) ? ` style="transform: rotate(${-rotation}deg)"` : ""}>${elementIconSvg(el)}</span>
       <span class="el-label">${escapeHtml(el.label || "")}</span>
       ${stateText && statePos !== "none" ? `<span class="el-state">${escapeHtml(stateText)}</span>` : ""}
       ${!viewMode ? '<div class="resize-handle"></div>' : ""}
@@ -534,33 +670,7 @@ function renderElements(elements) {
   });
   renderDrawingOutline(crop);
   renderPlanOverlay();
-  renderAppliances(crop);
   if (viewMode) keepOutsideElementsVisible();
-}
-
-/** Electrodomésticos (nevera, lavavajillas, Roborock) en su sitio del plano:
- *  en vista se pulsan y abren sus acciones; en edición se arrastran. */
-let appliancesReady = false;
-function renderAppliances(crop) {
-  const HA = window.HADomoticsAppliances;
-  const cc = $("canvasContainer");
-  const img = $("floorImage");
-  if (!HA || !cc || !img || !currentFloor) return;
-  if (!appliancesReady) {
-    appliancesReady = true;
-    HA.configure({
-      call: callAddonOrHass,
-      save: (body) => apiFetch("/api/appliances/positions", { method: "PUT", body: JSON.stringify(body) }),
-      toast: (msg, type) => toast(msg, type),
-    });
-    HA.load().then(() => renderAppliances(currentPlanCrop()));
-    return;
-  }
-  const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
-  const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
-  if (!w || !h) return;
-  HA.render(cc, currentFloor, floors, w, h, { viewMode, crop: crop || null });
-  HA.update(cc, entityStates);
 }
 
 /** En edición, contorno discontinuo del dibujo: lo de fuera es el fondo. */
@@ -616,7 +726,18 @@ function renderPlanOverlay() {
 // View / Interact mode helpers
 // ---------------------------------------------------------------------------
 
+/** Color del icono legible sobre el fondo del elemento (claro → icono oscuro). */
+function _iconColorFor(bg) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(bg || "").trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  return L > 0.45 ? "#0f172a" : "#ffffff";
+}
+
 function _getElementBackground(el) {
+  if (isApplianceEl(el)) return "transparent";
   if (el.entity_id && entityStates[el.entity_id]) {
     const state = entityStates[el.entity_id].state;
     const isOn = ["on", "open", "home", "active", "heating", "cooling", "true"].includes(
@@ -628,18 +749,25 @@ function _getElementBackground(el) {
 }
 
 function updateElementStates() {
+  // Antes del guard: si los estados llegan antes que la planta, el panel ya los tiene.
+  if (window.HADomoticsAppliances) window.HADomoticsAppliances.update(entityStates);
   if (!currentFloor || !$("canvasContainer")) return;
   if (window.HADomoticsPlan) {
     window.HADomoticsPlan.update($("canvasContainer"), currentFloor, floors, entityStates);
-  }
-  if (window.HADomoticsAppliances) {
-    window.HADomoticsAppliances.update($("canvasContainer"), entityStates);
   }
   (currentFloor.elements || []).forEach((el) => {
     const overlay = $("canvasContainer").querySelector(`[data-id="${el.id}"]`);
     if (!overlay) return;
 
     overlay.style.background = _getElementBackground(el);
+    overlay.style.setProperty("--el-fg", _iconColorFor(_getElementBackground(el)));
+    overlay.classList.remove("el-on", "el-off", "el-unavailable", "running", "alert", "unavailable");
+    elementStateClasses(el).forEach((c) => overlay.classList.add(c));
+    const iconEl = overlay.querySelector(".el-icon");
+    if (iconEl) {
+      const svg = elementIconSvg(el);
+      if (iconEl.innerHTML !== svg) iconEl.innerHTML = svg;
+    }
 
     // Update live state text
     const statePos = el.state_position || "bottom";
@@ -779,6 +907,11 @@ function showQuickPositionModal(el) {
 // Handle tap in View Mode
 // ---------------------------------------------------------------------------
 async function handleElementTap(el, overlayEl) {
+  // Electrodomésticos: su ventana de estado y acciones.
+  if (isApplianceEl(el)) {
+    HA_APPL().open(el);
+    return;
+  }
   const action = el.tap_action || "toggle";
 
   if (action === "none") return;
@@ -1185,6 +1318,7 @@ async function loadFloors() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (window.HADomoticsPlan) await window.HADomoticsPlan.load();
+  if (window.HADomoticsAppliances) await window.HADomoticsAppliances.load();
   await loadFloors();
   setViewMode(true);
 
@@ -1318,6 +1452,31 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("btnToggleMode").addEventListener("click", () => setViewMode(!viewMode));
 
   $("elementForm").addEventListener("submit", saveElementProps);
+  $("propType").addEventListener("change", () => {
+    const type = $("propType").value;
+    // Un electrodoméstico nuevo se ve como un icono redondo: tamaño cuadrado.
+    if (HA_APPL() && HA_APPL().isAppliance(type)) {
+      if ((parseInt($("propWidth").value) || 60) === 60 && (parseInt($("propHeight").value) || 30) === 30) {
+        $("propWidth").value = 48;
+        $("propHeight").value = 48;
+      }
+    }
+    applianceFormFor(currentElement);
+  });
+  if ($("btnDetectAppliance")) $("btnDetectAppliance").addEventListener("click", detectApplianceEntities);
+  if (HA_APPL()) {
+    HA_APPL().configure({
+      call: callAddonOrHass,
+      toast: (msg, type) => toast(msg, type),
+      fetchJson: (path) => apiFetch(path),
+      hass: embeddedHass,
+    });
+  }
+  if ($("propSvgIcon") && window.HADomoticsIcons) {
+    const I = window.HADomoticsIcons;
+    $("propSvgIcon").innerHTML = '<option value="auto">Automático (según tipo y nombre)</option>' +
+      I.keys.map((k) => `<option value="${k}">${escapeHtml(I.LABELS[k])}</option>`).join("");
+  }
 
   $("btnCloseProps").addEventListener("click", () => {
     currentElement = null;
