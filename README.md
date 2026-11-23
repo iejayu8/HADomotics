@@ -1,6 +1,6 @@
 HADomotics is a project structured into multiple components, including a backend module, a custom Lovelace card, and a test suite. This repository contains the source code, configuration files, and development assets for the project.
 
-Latest addon version: 3.5.2
+Latest addon version: 3.7.0
 
 **Access**
 
@@ -45,6 +45,17 @@ How the calls are made:
 - Inside Home Assistant, zones and siren use `hass.callService` as the signed-in user.
 - Outside, they go to `POST /api/security/control`. It is admin-only and has a fixed whitelist: the 12 zones and `input_boolean.alarma_sirena` with `turn_on`/`turn_off`, the two selects with `select_option` (only an option the entity lists), and the siren with `turn_on` (only with `"confirm": true`) and `turn_off`. Anything else is rejected before it reaches Home Assistant.
 
+**Appliances (since 3.7.0)**
+
+Dispositivos shows the fridge, the dishwasher and the Roborock vacuum-mop on the ground floor, each with its own icon and a short live badge (fridge and freezer temperature; dishwasher state and time left; battery and vacuum state). The icon fills while the appliance is running and gets a red ring for an alarm: an open fridge or freezer door, a dishwasher that needs attention, or a vacuum or dock error. In view mode, tap an icon to open its actions:
+- **Roborock** (`vacuum.qrevo_edge_2_pro`): Iniciar, Pausar, Volver a la base, Localizar; battery, state, current room, error and dock status; cleaning mode (`select.qrevo_edge_2_pro_modo_de_limpieza`) and suction power (`vacuum.set_fan_speed`).
+- **Lavavajillas** (Bosch, Home Connect): state, active program, progress, time left, door and remote start; on/off, program and the half-load / extra-dry / hygiene options. **Iniciar** selects the chosen program in `select.cocina_lavavajillas_programa_activo`, which needs remote start enabled on the appliance; **Detener** presses `button.cocina_lavavajillas_detener_programa`. Both ask for confirmation. Home Assistant does not expose pause for this dishwasher, so there is none.
+- **Nevera** (Samsung, SmartThings): fridge and freezer temperatures and setpoints (− / + within the entity's min and max), Power cool, Power freeze, ice maker, door states and power.
+
+The entities are listed in `hadomotics/appliances_map.json`; they all exist in Home Assistant. Actions use real Home Assistant services, like the other controls: inside Home Assistant as the signed-in user (`hass.callService`); outside, through the add-on service proxy. The proxy allows `vacuum.locate` and `vacuum.set_fan_speed`, and allows `number.set_value` and `select.select_option` only for the appliance entities in that file. Every other `number` and `select`, such as the charger power limit, is still rejected.
+
+Default positions: the fridge and the dishwasher are in the kitchen (their Home Assistant area is Cocina). The Roborock and its dock have no area in Home Assistant, so the dock is placed in the hall by the entrance, because the vacuum reports «Recibidor» as its current room while it charges. In Dispositivos edit mode you can drag each appliance; the position is saved when you drop it, in the add-on configuration under `appliance_positions`, through the admin-only `PUT /api/appliances/positions`. Backups include `appliance_positions`.
+
 **Elements outside the floor plan**
 
 In edit mode, in both Dispositivos and Seguridad, a dashed line marks the edge of the drawing and leaves a margin of background around it. Drop an element in that margin to keep it outside the drawing, for example the Día and Noche scene buttons. It stays outside, roughly where you put it, at any screen size. The plan shrinks to at most 85% to make room. On small screens the element moves only as much as it needs to stay on screen.
@@ -52,7 +63,7 @@ In edit mode, in both Dispositivos and Seguridad, a dashed line marks the edge o
 How it is stored:
 - Dispositivos elements keep their pixel coordinates, which may now be negative or beyond the image edge, plus `outside: true` or `false`. The field is set when you drop an element after moving it.
 - Elements without the `outside` field are the older ones. Only they get the 3.5.0 crop clamp and relocation, so saved configurations keep working.
-- Backups include `security_positions`.
+- Backups include `security_positions` (and, since 3.7.0, `appliance_positions`).
 
 Drawing overlays live in `hadomotics/plan_overlays.json`:
 - the white-border crop of each plan, applied only to the reference images (since 3.5.1 also in edit mode, so what you place is what you see);

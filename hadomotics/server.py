@@ -162,7 +162,7 @@ ALLOWED_HA_SERVICES: dict[str, frozenset[str]] = {
     "script": frozenset({"turn_off", "turn_on"}),
     "siren": frozenset({"turn_off", "turn_on"}),
     "switch": frozenset({"turn_off", "turn_on"}),
-    "vacuum": frozenset({"pause", "return_to_base", "start", "start_pause", "stop"}),
+    "vacuum": frozenset({"locate", "pause", "return_to_base", "set_fan_speed", "start", "start_pause", "stop"}),
     "valve": frozenset({"close_valve", "open_valve", "set_valve_position"}),
 }
 
@@ -420,6 +420,7 @@ _READ_ONLY_EXACT = {
     "/api/security/map",
     "/api/security/state",
     "/api/plan/overlays",
+    "/api/appliances/map",
 }
 
 
@@ -1053,11 +1054,38 @@ def ha_state(entity_id: str):
         return jsonify({"error": "Could not retrieve entity state"}), 503
 
 
+def _load_appliance_entity_services() -> dict:
+    try:
+        import appliances
+
+        return appliances.entity_scoped_services(appliances.load_map())
+    except Exception as exc:  # pragma: no cover - mapa ilegible
+        log.warning("Could not read appliances map: %s", type(exc).__name__)
+        return {}
+
+
+# number.set_value / select.select_option solo para las entidades de los
+# electrodomésticos (appliances_map.json): el resto de number/select (p. ej. el
+# límite de potencia del cargador) sigue bloqueado.
+APPLIANCE_ENTITY_SERVICES: dict = _load_appliance_entity_services()
+
+
+def _entity_service_allowed(domain: str, service: str, data) -> bool:
+    allowed = APPLIANCE_ENTITY_SERVICES.get((domain, service))
+    if not allowed or not isinstance(data, dict):
+        return False
+    target = data.get("entity_id")
+    targets = target if isinstance(target, list) else [target]
+    return bool(targets) and all(isinstance(t, str) and t in allowed for t in targets)
+
+
 @app.route("/api/ha/services/<domain>/<service>", methods=["POST"])
 def ha_call_service(domain: str, service: str):
     domain = (domain or "").lower()
     service = (service or "").lower()
-    if not _service_allowed(domain, service):
+    if not _service_allowed(domain, service) and not _entity_service_allowed(
+        domain, service, request.get_json(silent=True)
+    ):
         log.warning("Blocked HA service %s.%s from %s", domain, service, _peer_ip())
         return jsonify({"error": "Service is not allowed"}), 403
     token = _token_for_request()
@@ -1120,6 +1148,8 @@ def backup_config():
 
     if isinstance(config.get("security_positions"), dict) and config["security_positions"]:
         backup["security_positions"] = config["security_positions"]
+    if isinstance(config.get("appliance_positions"), dict) and config["appliance_positions"]:
+        backup["appliance_positions"] = config["appliance_positions"]
 
     return jsonify(backup)
 
@@ -1157,6 +1187,8 @@ def restore_config():
 
     if isinstance(data.get("security_positions"), dict):
         new_config["security_positions"] = data["security_positions"]
+    if isinstance(data.get("appliance_positions"), dict):
+        new_config["appliance_positions"] = data["appliance_positions"]
 
     save_config(new_config)
     return jsonify({"ok": True, "message": "Configuration restored successfully"})
@@ -1294,6 +1326,21 @@ app.register_blueprint(_security_blueprint(
     load_positions=lambda: load_config().get("security_positions", {}),
     save_positions=_save_security_positions,
     is_admin=_request_is_admin,
+))
+
+
+from appliances import create_blueprint as _appliances_blueprint  # noqa: E402
+
+
+def _save_appliance_positions(positions: dict) -> None:
+    config = load_config()
+    config["appliance_positions"] = positions
+    save_config(config)
+
+
+app.register_blueprint(_appliances_blueprint(
+    load_positions=lambda: load_config().get("appliance_positions", {}),
+    save_positions=_save_appliance_positions,
 ))
 
 

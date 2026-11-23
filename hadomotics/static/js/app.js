@@ -534,7 +534,33 @@ function renderElements(elements) {
   });
   renderDrawingOutline(crop);
   renderPlanOverlay();
+  renderAppliances(crop);
   if (viewMode) keepOutsideElementsVisible();
+}
+
+/** Electrodomésticos (nevera, lavavajillas, Roborock) en su sitio del plano:
+ *  en vista se pulsan y abren sus acciones; en edición se arrastran. */
+let appliancesReady = false;
+function renderAppliances(crop) {
+  const HA = window.HADomoticsAppliances;
+  const cc = $("canvasContainer");
+  const img = $("floorImage");
+  if (!HA || !cc || !img || !currentFloor) return;
+  if (!appliancesReady) {
+    appliancesReady = true;
+    HA.configure({
+      call: callAddonOrHass,
+      save: (body) => apiFetch("/api/appliances/positions", { method: "PUT", body: JSON.stringify(body) }),
+      toast: (msg, type) => toast(msg, type),
+    });
+    HA.load().then(() => renderAppliances(currentPlanCrop()));
+    return;
+  }
+  const w = parseFloat(img.dataset.baseWidth) || img.naturalWidth;
+  const h = parseFloat(img.dataset.baseHeight) || img.naturalHeight;
+  if (!w || !h) return;
+  HA.render(cc, currentFloor, floors, w, h, { viewMode, crop: crop || null });
+  HA.update(cc, entityStates);
 }
 
 /** En edición, contorno discontinuo del dibujo: lo de fuera es el fondo. */
@@ -605,6 +631,9 @@ function updateElementStates() {
   if (!currentFloor || !$("canvasContainer")) return;
   if (window.HADomoticsPlan) {
     window.HADomoticsPlan.update($("canvasContainer"), currentFloor, floors, entityStates);
+  }
+  if (window.HADomoticsAppliances) {
+    window.HADomoticsAppliances.update($("canvasContainer"), entityStates);
   }
   (currentFloor.elements || []).forEach((el) => {
     const overlay = $("canvasContainer").querySelector(`[data-id="${el.id}"]`);
