@@ -1,6 +1,6 @@
 HADomotics is a project structured into multiple components, including a backend module, a custom Lovelace card, and a test suite. This repository contains the source code, configuration files, and development assets for the project.
 
-Latest addon version: 3.8.0
+Latest addon version: 3.9.0-beta.1
 
 **Access**
 
@@ -67,6 +67,10 @@ Upgrading from 3.7.0: the three hard-coded appliances are gone and nothing is cr
 **Element icons (3.8.0)**
 
 Plan elements use built-in inline SVG icons in one style (24 grid, 1.8 round stroke, off / on / unavailable states), chosen from the type, domain, device class and name: blind (slats follow the position), interior garage door, exterior door / gate, door, window, light, day mode, night mode, scene, heat pump / climate, temperature, humidity, energy, pool pump, switch, plug, sensor, motion, camera, alarm, siren, EV charger, fan, lock, speaker, indicator, generic and the three appliances. **Icono en el plano** in the element panel overrides the choice. The MDI icon field is still used by the Lovelace card.
+
+**3D neon view (beta, 3.9.0-beta.1)**
+
+In Dispositivos view mode, the **3D** button in the dock shows the floor plan in perspective in a neon style inspired by [NeonPlan 3D](https://github.com/Mastershort/neonplan3d) (MIT; only the visual idea, no code). The house is drawn on a night-blue grid. The outline rises as glowing cyan glass walls, and the inner walls come from the edges of the plan image. Elements become upright round pins with their label on top. Tapping a pin works as in 2D, and states update live. Drag horizontally to turn the house; the buttons on the right turn, tilt, zoom and reset. Editing always switches back to 2D. It is plain CSS 3D plus a canvas, with no libraries and no CDN (`static/js/view3d.js`), and the choice is stored in the browser (`localStorage`).
 
 **Elements outside the floor plan**
 

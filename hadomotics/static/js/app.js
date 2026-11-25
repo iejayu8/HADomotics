@@ -609,6 +609,9 @@ function renderElements(elements) {
     div.style.top = `${pos.y}px`;
     div.style.width = `${el.width}px`;
     div.style.height = `${el.height}px`;
+    // Tamaño original para la vista 3D, donde el elemento se dibuja como chincheta en pie.
+    div.style.setProperty("--w", String(Number(el.width) || 0));
+    div.style.setProperty("--h", String(Number(el.height) || 0));
     div.style.background = _getElementBackground(el);
     div.style.setProperty("--el-fg", _iconColorFor(_getElementBackground(el)));
     div.style.transform = `rotate(${rotation}deg)`;
@@ -993,6 +996,8 @@ async function handleElementTap(el, overlayEl) {
 
 function setViewMode(enabled) {
   viewMode = enabled;
+  // Editar siempre en 2D: arrastrar y redimensionar trabajan en píxeles del plano.
+  if (window.HADomotics3D) window.HADomotics3D.setEditing(!enabled);
   document.body.classList.toggle("view-mode-active", enabled);
   const btn = $("btnToggleMode");
   const sidebar = $("sidebar");
@@ -1317,6 +1322,7 @@ async function loadFloors() {
 // ---------------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", async () => {
+  if (window.HADomotics3D) window.HADomotics3D.install({ onChange: () => scheduleFitFloorPlan() });
   if (window.HADomoticsPlan) await window.HADomoticsPlan.load();
   if (window.HADomoticsAppliances) await window.HADomoticsAppliances.load();
   await loadFloors();
@@ -1692,7 +1698,11 @@ function fitFloorPlan() {
   const offsetY = fit.oy;
 
   container.style.transformOrigin = "top left";
-  container.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+  // Vista 3D neón (beta): misma colocación, girada alrededor del centro del dibujo.
+  const HD3 = window.HADomotics3D;
+  const fit3d = { ox: offsetX, oy: offsetY, scale, drawing, aw: availableWidth, ah: availableHeight };
+  container.style.transform = HD3 ? HD3.transformFor(fit3d) : `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+  if (HD3) HD3.afterFit(container, img, fit3d);
 
   // Zona visible del contenedor en coordenadas del plano (sin el dock).
   const inset = 6;
