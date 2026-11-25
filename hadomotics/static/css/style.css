@@ -1133,3 +1133,250 @@ body.view-mode-active .element-overlay.view-mode.appliance-el.alert .el-icon {
 .appl-roles { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .appl-role-row { display: flex; flex-direction: column; gap: 2px; font-size: .78rem; color: var(--text-secondary); }
 .appl-role-row input { font-size: .8rem; }
+
+/* =========================================================
+   3.9.0 beta — vista 3D neón (static/js/view3d.js)
+   Inspirada en NeonPlan 3D (MIT): azul noche, paredes cian que
+   brillan, suelo en rejilla y dispositivos como chinchetas en pie.
+   ========================================================= */
+:root {
+  --np-bg: #070d1c;
+  --np-cyan: #22e3ff;
+  --np-cyan-soft: rgba(34, 227, 255, 0.28);
+  --np-amber: #ffb547;
+  --np-pin: 34px;
+}
+
+/* El botón 2D/3D solo tiene sentido en modo vista. */
+#btnToggle3d { display: none; }
+body.view-mode-active #btnToggle3d {
+  display: inline-flex;
+  order: 3;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 12px;
+  margin-left: 2px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+}
+body.view-mode-active #btnToggle3d .material-icons { font-size: 18px; }
+body.view-mode-active #btnToggle3d.active {
+  background: var(--np-cyan);
+  border-color: var(--np-cyan);
+  color: #04202a;
+  box-shadow: 0 0 18px rgba(34, 227, 255, 0.55);
+}
+
+body.neon-3d,
+body.neon-3d .editor-area,
+body.neon-3d .canvas-wrapper {
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(34, 120, 255, 0.16), transparent 60%),
+    var(--np-bg);
+}
+body.neon-3d .floor-canvas {
+  perspective: 1600px;
+  perspective-origin: 50% 35%;
+}
+body.neon-3d #canvasContainer {
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(.2, .8, .2, 1);
+}
+body.neon-3d #canvasContainer.np3d-dragging { transition: none; }
+
+/* Plano «de noche»: más oscuro y azulado para que el neón resalte. */
+body.neon-3d #floorImage {
+  filter: brightness(0.36) saturate(0.5) sepia(0.3) hue-rotate(178deg) contrast(1.15);
+}
+body.neon-3d svg.plan-overlay { filter: brightness(0.8) saturate(0.7); }
+
+.np3d-layer {
+  position: absolute;
+  pointer-events: none;
+  transform-style: preserve-3d;
+}
+.np3d-grid {
+  transform: translateZ(-1px);
+  background-image:
+    linear-gradient(rgba(34, 227, 255, 0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 227, 255, 0.13) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 35%, transparent 72%);
+  mask-image: radial-gradient(ellipse at center, #000 35%, transparent 72%);
+}
+.np3d-edges {
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 3px rgba(34, 227, 255, 0.9));
+}
+.np3d-wall {
+  border: 1.5px solid rgba(34, 227, 255, 0.85);
+  box-shadow: 0 0 14px rgba(34, 227, 255, 0.5), inset 0 0 18px rgba(34, 227, 255, 0.25);
+  box-sizing: border-box;
+}
+.np3d-wall-n { transform-origin: 50% 0; transform: rotateX(90deg);
+  background: linear-gradient(to bottom, var(--np-cyan-soft), rgba(34, 227, 255, 0.04)); }
+.np3d-wall-s { transform-origin: 50% 100%; transform: rotateX(-90deg);
+  background: linear-gradient(to top, var(--np-cyan-soft), rgba(34, 227, 255, 0.04)); }
+.np3d-wall-w { transform-origin: 0 50%; transform: rotateY(-90deg);
+  background: linear-gradient(to right, var(--np-cyan-soft), rgba(34, 227, 255, 0.04)); }
+.np3d-wall-e { transform-origin: 100% 50%; transform: rotateY(90deg);
+  background: linear-gradient(to left, var(--np-cyan-soft), rgba(34, 227, 255, 0.04)); }
+
+/* Elementos: chinchetas redondas de pie sobre su punto del plano, siempre de cara.
+   La caja del elemento es transparente y alta (chincheta + etiqueta encima) para que
+   todo quede dentro de ella: así Chrome la ordena en profundidad como una sola pieza. */
+body.neon-3d .element-overlay.view-mode {
+  --pin: calc(var(--np-pin) * var(--np-k, 1));
+  --stem: calc(var(--pin) * 0.55);
+  --box-w: calc(var(--pin) * 6);
+  --box-h: calc(var(--pin) * 2.1);
+  width: var(--box-w) !important;
+  height: var(--box-h) !important;
+  padding: 0;
+  margin-left: calc(var(--w, 0) * 1px / 2 - var(--box-w) / 2);
+  margin-top: calc(var(--h, 0) * 1px / 2 - var(--box-h) - var(--stem));
+  transform-origin: 50% calc(100% + var(--stem)) !important;
+  transform: rotateZ(calc(-1 * var(--np-spin))) rotateX(calc(-1 * var(--np-tilt))) !important;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  pointer-events: none;
+  color: #cdf6ff;
+  --el-fg: #cdf6ff;
+}
+body.neon-3d .element-overlay.view-mode::after { display: none; }
+/* La chincheta: el icono redondo (es lo que recibe el toque). */
+body.neon-3d .element-overlay.view-mode .el-icon {
+  order: 2;
+  flex: 0 0 auto;
+  width: var(--pin);
+  height: var(--pin);
+  border-radius: 50%;
+  background: rgba(8, 16, 34, 0.9);
+  border: 1.5px solid rgba(34, 227, 255, 0.6);
+  box-shadow: 0 0 12px rgba(34, 227, 255, 0.35);
+  box-sizing: border-box;
+  pointer-events: auto;
+  cursor: pointer;
+  transform: none !important;
+  filter: none;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+body.neon-3d .element-overlay.view-mode .el-icon svg { width: 58%; height: 58%; }
+/* Tallo luminoso hasta el suelo. */
+body.neon-3d .element-overlay.view-mode::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 2px;
+  height: var(--stem);
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom, rgba(34, 227, 255, 0.9), rgba(34, 227, 255, 0));
+  pointer-events: none;
+}
+/* Encendido / en marcha: ámbar como las luces de NeonPlan. */
+body.neon-3d .element-overlay.view-mode.el-on .el-icon,
+body.neon-3d .element-overlay.view-mode.running .el-icon {
+  border-color: var(--np-amber);
+  color: #1b1200;
+  background: var(--np-amber);
+  box-shadow: 0 0 18px rgba(255, 181, 71, 0.75), 0 0 42px rgba(255, 181, 71, 0.35);
+}
+body.neon-3d .element-overlay.view-mode.el-on,
+body.neon-3d .element-overlay.view-mode.running { --el-fg: #1b1200; }
+body.neon-3d .element-overlay.view-mode.el-on::before,
+body.neon-3d .element-overlay.view-mode.running::before {
+  background: linear-gradient(to bottom, rgba(255, 181, 71, 0.95), rgba(255, 181, 71, 0));
+}
+/* Electrodomésticos: misma chincheta con su color propio. */
+body.neon-3d .element-overlay.view-mode.appliance-el .el-icon {
+  width: var(--pin);
+  height: var(--pin);
+  max-width: none;
+  border: 2px solid var(--appl-color);
+  color: var(--appl-color);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--appl-color) 55%, transparent);
+}
+body.neon-3d .element-overlay.view-mode.appliance-el.running .el-icon { background: var(--appl-color); color: #0b1220; }
+body.neon-3d .element-overlay.view-mode.alert .el-icon { border-color: #ff4d6d; box-shadow: 0 0 18px rgba(255, 77, 109, 0.8); }
+body.neon-3d .element-overlay.view-mode.el-unavailable .el-icon,
+body.neon-3d .element-overlay.view-mode.unavailable .el-icon { opacity: 0.55; }
+
+/* Etiquetas: pastilla oscura con borde cian, encima de la chincheta. */
+body.neon-3d .element-overlay.view-mode .el-state {
+  order: 1;
+  position: static !important;
+  margin: 0 0 6px 0 !important;
+  transform: scale(var(--np-k, 1)) !important;
+  transform-origin: bottom center !important;
+  max-width: none;
+  background: rgba(6, 14, 30, 0.9);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(34, 227, 255, 0.45);
+  color: #e6fbff;
+  box-shadow: 0 0 10px rgba(34, 227, 255, 0.25);
+}
+
+/* Dock y plantas en estilo neón. */
+body.neon-3d .editor-toolbar {
+  border-color: rgba(34, 227, 255, 0.25);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55), 0 0 24px rgba(34, 227, 255, 0.12);
+}
+body.neon-3d .floor-switcher .floor-btn.active {
+  background: var(--np-cyan);
+  border-color: var(--np-cyan);
+  color: #04202a;
+  box-shadow: 0 0 16px rgba(34, 227, 255, 0.5);
+}
+
+/* Controles de cámara (giro, inclinación, zoom). */
+.np3d-controls {
+  position: fixed;
+  right: 14px;
+  bottom: calc(var(--nav-h) + 84px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 2400;
+}
+.np3d-controls[hidden] { display: none; }
+.np3d-controls button {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(34, 227, 255, 0.35);
+  background: rgba(8, 16, 34, 0.85);
+  color: #bff4ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(34, 227, 255, 0.15);
+}
+.np3d-controls button:hover { border-color: var(--np-cyan); color: #fff; }
+.np3d-controls .material-icons { font-size: 20px; }
+@media (max-width: 600px) {
+  :root { --np-pin: 28px; }
+  .np3d-controls { right: 8px; bottom: calc(var(--nav-h) + 80px); }
+  .np3d-controls button { width: 34px; height: 34px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.neon-3d #canvasContainer { transition: none; }
+}

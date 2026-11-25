@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.9.0-beta.1
+
+Versión de prueba en la rama `feat/vista-3d-neon` para ver cómo quedaría HADomotics con una vista 3D estilo neón. No es una versión publicada.
+
+### Added
+- **Vista 3D neón del plano de Dispositivos (beta)**, inspirada en el estilo de [NeonPlan 3D](https://github.com/Mastershort/neonplan3d) (licencia MIT; solo se ha tomado la idea visual, no su código):
+  - la casa en perspectiva sobre fondo azul noche con suelo en rejilla;
+  - paredes que brillan en cian: el contorno se levanta como cristal y las paredes interiores salen de los bordes de la imagen del plano;
+  - los elementos son chinchetas redondas de pie con su etiqueta encima. Encendido o en marcha se ve en ámbar; los electrodomésticos llevan su color y la alarma, un aro rojo.
+- **Cómo usarla:** en modo vista, botón **3D** del dock (junto a las plantas). El mismo botón vuelve a **2D**. La elección se recuerda en ese navegador.
+  - Para girar la casa, arrastra en horizontal (en vertical sigue cambiando de planta).
+  - Los botones de la derecha giran, inclinan, acercan y vuelven a la vista inicial.
+  - En pantallas verticales, un plano apaisado se gira solo 90° para aprovechar el alto.
+- Todo lo demás funciona igual en 3D: tocar un elemento ejecuta su acción o abre su panel (persianas, electrodomésticos…), los estados se actualizan en vivo, se cambia de planta y se usan los iconos unificados de 3.8.0.
+- **Editar es siempre en 2D:** al pulsar el lápiz se vuelve al plano plano para mover y redimensionar, y al volver a modo vista reaparece el 3D.
+- Sin librerías nuevas ni CDN: CSS 3D y un canvas para los bordes. Funciona igual por ingress y sin conexión.
+
 ## 3.8.0
 
 ### Changed
